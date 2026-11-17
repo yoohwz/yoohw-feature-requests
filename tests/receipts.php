@@ -37,7 +37,7 @@ $check( 2 === count( $mail ), 'Completed event replay does not duplicate either 
 $mail = array();
 $managed = $create(); $id = $managed['id'];
 $check( 2 === count( $mail ) && $owner_email === $mail[0]['to'] && get_userdata( $admin )->user_email !== $mail[0]['to'], 'Managed receipt routes to persisted owner never acting manager' );
-$check( false !== strpos( $mail[0]['message'], 'Created on your behalf by a request moderator.' ) && false !== strpos( $mail[1]['message'], 'for the request owner' ) && false === strpos( $mail[1]['message'], 'on your behalf' ), 'Managed owner and admin copies identify their correct perspective' );
+$check( false !== strpos( $mail[0]['subject'], 'was created on your behalf' ) && false !== strpos( $mail[0]['message'], 'A request moderator created this suggestion on your behalf. It is now waiting for moderation.' ) && 1 === substr_count( $mail[0]['message'], 'on your behalf' ) && false !== strpos( $mail[1]['message'], 'for the request owner' ) && false === strpos( $mail[1]['message'], 'on your behalf' ), 'Managed owner and admin copies identify their correct perspective' );
 $check( false === strpos( $mail[0]['message'], 'PRIVATE BODY' ) && false === strpos( $mail[0]['message'], 'secret.example.test' ) && false === strpos( $mail[0]['message'], 'behalf_admin_' ) && false === strpos( $mail[0]['message'], get_userdata( $admin )->user_email ), 'Receipt excludes body, private source and actor identity' );
 $mail = array(); $deferred = $create( array( 'notify' => false, 'creation_key' => hash( 'sha256', $suffix ) ) );
 $check( ! $mail && 'eligible' === get_post_meta( $deferred['id'], R::META_RECEIPT, true ) && ! $job( $deferred['id'] ), 'Deferred save remains eligible without early email or job' );

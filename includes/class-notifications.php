@@ -127,14 +127,22 @@ final class Notifications {
 			$previous = $job; $job['result'] = 'cancelled'; update_post_meta( $id, $key, $job, $previous ); wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); return;
 		}
 		$status_label = Requests::state_label( $id );
+		$creator = (int) get_post_meta( $id, Requests::META_CREATED_BY, true );
+		$managed = $creator && $creator !== (int) $job['author'];
 		if ( 'new' === $type ) {
 			/* translators: %d: Request ID. */
 			$subject = sprintf( __( 'New request #%d needs review', 'yoohw-feature-requests' ), $id );
 			$intro = __( 'A new suggestion has been submitted and is waiting for your review.', 'yoohw-feature-requests' );
 		} elseif ( 'receipt' === $type ) {
-			/* translators: %d: Request ID. */
-			$subject = sprintf( __( 'Your request #%d has been received', 'yoohw-feature-requests' ), $id );
-			$intro = __( 'Your suggestion has been received and is waiting for moderation.', 'yoohw-feature-requests' );
+			if ( $managed ) {
+				/* translators: %d: Request ID. */
+				$subject = sprintf( __( 'Request #%d was created on your behalf', 'yoohw-feature-requests' ), $id );
+				$intro = __( 'A request moderator created this suggestion on your behalf. It is now waiting for moderation.', 'yoohw-feature-requests' );
+			} else {
+				/* translators: %d: Request ID. */
+				$subject = sprintf( __( 'Your request #%d has been received', 'yoohw-feature-requests' ), $id );
+				$intro = __( 'Your suggestion has been received and is waiting for moderation.', 'yoohw-feature-requests' );
+			}
 		} elseif ( ! empty( $job['events']['moderation'] ) ) {
 			if ( 'publish' === $job['after']['status'] ) {
 				/* translators: %d: Request ID. */
@@ -168,8 +176,7 @@ final class Notifications {
 			}
 		}
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
-		$creator = (int) get_post_meta( $id, Requests::META_CREATED_BY, true );
-		if ( $creator && $creator !== (int) $job['author'] ) {
+		if ( $managed && 'receipt' !== $type ) {
 			$details[] = 'new' === $type ? __( 'Created by a request moderator for the request owner.', 'yoohw-feature-requests' ) : __( 'Created on your behalf by a request moderator.', 'yoohw-feature-requests' );
 		}
 		$message = self::email_content( $id, $job, $type, $intro, $details, $url );
