@@ -18,6 +18,9 @@ final class Requests {
 	const META_KIND  = '_yfr_kind';
 	const META_STATE = '_yfr_state';
 	const META_URL   = '_yfr_reference_url';
+	const META_CREATED_BY = '_yfr_created_by';
+	const META_CREATION_KEY = '_yfr_creation_key';
+	const META_RECEIPT = '_yfr_receipt_eligibility';
 
 	public static function kinds() {
 		return array(
@@ -191,37 +194,96 @@ final class Requests {
 		if ( get_transient( 'yfr_submit_' . $user_id ) ) {
 			return new \WP_Error( 'rate_limit', __( 'Please wait one minute before submitting another request.', 'yoohw-feature-requests' ) );
 		}
-		$pending = new \WP_Query( array( 'post_type' => self::TYPE, 'post_status' => 'pending', 'author' => $user_id, 'fields' => 'ids', 'posts_per_page' => 5, 'no_found_rows' => true ) );
+		$pending = new \WP_Query( array( 'post_type' => self::TYPE, 'post_status' => 'pending', 'author' => $user_id, 'fields' => 'ids', 'posts_per_page' => 5, 'no_found_rows' => true, 'meta_query' => array( 'relation' => 'OR', array( 'key' => self::META_CREATED_BY, 'compare' => 'NOT EXISTS' ), array( 'key' => self::META_CREATED_BY, 'value' => $user_id, 'type' => 'NUMERIC' ) ) ) );
 		if ( count( $pending->posts ) >= 5 ) {
 			return new \WP_Error( 'pending_limit', __( 'You already have five requests awaiting moderation. Please wait for a review.', 'yoohw-feature-requests' ) );
 		}
+		$id = self::persist( $data, $user_id, $user_id, '', true );
+		if ( ! is_wp_error( $id ) ) {
+			set_transient( 'yfr_submit_' . $user_id, 1, MINUTE_IN_SECONDS );
+		}
+		return $id;
+	}
+
+	/** Create for an existing owner without changing the current actor/session. */
+	public static function create_for_user( array $input, $owner_id, array $context = array() ) {
+		$type = get_post_type_object( self::TYPE );
+		if ( ! is_user_logged_in() || ! $type || ! current_user_can( self::MANAGE ) || ! current_user_can( $type->cap->create_posts ) ) {
+			return new \WP_Error( 'forbidden', __( 'You cannot create requests for another user.', 'yoohw-feature-requests' ) );
+		}
+		if ( ! is_int( $owner_id ) || $owner_id < 1 || ! get_userdata( $owner_id ) ) {
+			return new \WP_Error( 'invalid_owner', __( 'Select an existing request owner.', 'yoohw-feature-requests' ) );
+		}
+		$notify = array_key_exists( 'notify', $context ) ? $context['notify'] : true;
+		$key = array_key_exists( 'creation_key', $context ) ? $context['creation_key'] : '';
+		if ( ! is_bool( $notify ) || ! is_string( $key ) || ( '' !== $key && ! preg_match( '/^[a-f0-9]{64}$/D', $key ) ) ) {
+			return new \WP_Error( 'invalid_context', __( 'Use a valid creation context.', 'yoohw-feature-requests' ) );
+		}
+		$data = self::validate( $input );
+		if ( is_wp_error( $data ) ) { return $data; }
+		$actor = get_current_user_id();
+		if ( '' === $key ) {
+			$id = self::persist( $data, $owner_id, $actor, '', $notify );
+			return is_wp_error( $id ) ? $id : array( 'id' => $id, 'created' => true );
+		}
+		// Scope a confirmation to its actor, then verify the owner on every replay.
+		$key = hash( 'sha256', $actor . '|' . $key );
+		$lock = 'yfr_create_' . $key;
+		$token = wp_generate_uuid4();
+		global $wpdb;
+		// Insert-only: add_option can update an existing row during a concurrent insert.
+		$acquired = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $lock, $token ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Atomic confirmation lock, not a cached option read.
+		if ( 1 !== $acquired ) {
+			return new \WP_Error( 'creation_busy', __( 'This request is being saved. Please try again.', 'yoohw-feature-requests' ) );
+		}
+		try {
+			$prior = get_posts( array( 'post_type' => self::TYPE, 'post_status' => self::STATUSES, 'meta_key' => self::META_CREATION_KEY, 'meta_value' => $key, 'posts_per_page' => 1, 'fields' => 'ids' ) );
+			if ( $prior ) {
+				$post = get_post( $prior[0] );
+				if ( (int) $post->post_author !== $owner_id || (int) get_post_meta( $post->ID, self::META_CREATED_BY, true ) !== $actor ) {
+					return new \WP_Error( 'creation_conflict', __( 'This confirmation belongs to a different request owner.', 'yoohw-feature-requests' ) );
+				}
+				return array( 'id' => (int) $post->ID, 'created' => false );
+			}
+			$id = self::persist( $data, $owner_id, $actor, $key, $notify );
+			return is_wp_error( $id ) ? $id : array( 'id' => $id, 'created' => true );
+		} finally {
+			// Never release a lock owned by another operation.
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s", $lock, $token ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Ownership-checked release of the atomic lock.
+			wp_cache_delete( $lock, 'options' );
+		}
+	}
+
+	private static function persist( $data, $owner_id, $actor, $creation_key, $notify ) {
+		$meta = array( self::META_KIND => $data['kind'], self::META_STATE => 'under_review', self::META_URL => $data['url'], self::META_CREATED_BY => $actor, self::META_RECEIPT => 'eligible' );
+		if ( $creation_key ) { $meta[ self::META_CREATION_KEY ] = $creation_key; }
 		$id = wp_insert_post(
 			wp_slash( array(
-				'post_type' => self::TYPE, 'post_status' => 'pending', 'post_author' => $user_id,
+				'post_type' => self::TYPE, 'post_status' => 'pending', 'post_author' => $owner_id,
 				'post_title' => $data['title'], 'post_content' => $data['content'],
 				'comment_status' => 'closed', 'ping_status' => 'closed',
-				'meta_input' => array( self::META_KIND => $data['kind'], self::META_STATE => 'under_review', self::META_URL => $data['url'] ),
+				'meta_input' => $meta,
 			) ),
 			true
 		);
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
-		if ( ! $id || get_post_meta( $id, self::META_KIND, true ) !== $data['kind'] || get_post_meta( $id, self::META_STATE, true ) !== 'under_review' || get_post_meta( $id, self::META_URL, true ) !== $data['url'] ) {
+		if ( ! $id || 'eligible' !== get_post_meta( $id, self::META_RECEIPT, true ) || self::TYPE !== get_post_type( $id ) || 'pending' !== get_post_status( $id ) || (int) get_post_field( 'post_author', $id ) !== $owner_id || (int) get_post_meta( $id, self::META_CREATED_BY, true ) !== $actor || ( $creation_key && get_post_meta( $id, self::META_CREATION_KEY, true ) !== $creation_key ) || get_post_meta( $id, self::META_KIND, true ) !== $data['kind'] || get_post_meta( $id, self::META_STATE, true ) !== 'under_review' || get_post_meta( $id, self::META_URL, true ) !== $data['url'] ) {
 			if ( $id ) { wp_delete_post( $id, true ); }
 			return new \WP_Error( 'save_failed', __( 'The request could not be saved. Please try again.', 'yoohw-feature-requests' ) );
 		}
 		foreach ( $data['terms'] as $taxonomy => $term_id ) {
 			if ( $term_id ) {
 				$result = wp_set_object_terms( $id, array( $term_id ), $taxonomy );
-				if ( is_wp_error( $result ) ) {
+				$saved_terms = wp_get_object_terms( $id, $taxonomy, array( 'fields' => 'ids' ) );
+				if ( is_wp_error( $result ) || is_wp_error( $saved_terms ) || ! in_array( $term_id, array_map( 'intval', $saved_terms ), true ) ) {
 					wp_delete_post( $id, true );
 					return new \WP_Error( 'save_failed', __( 'The request could not be saved. Please try again.', 'yoohw-feature-requests' ) );
 				}
 			}
 		}
-		do_action( 'yoohw_feature_requests_submitted', $id );
-		set_transient( 'yfr_submit_' . $user_id, 1, MINUTE_IN_SECONDS );
+		if ( $notify ) { do_action( 'yoohw_feature_requests_submitted', $id ); }
 		return $id;
 	}
 

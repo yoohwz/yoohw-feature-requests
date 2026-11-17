@@ -16,7 +16,7 @@ $other = wp_insert_user( array( 'user_login' => 'mail_other_' . $suffix, 'user_e
 foreach ( array( $admin, $owner, $other ) as $user ) { if ( is_wp_error( $user ) ) { throw new RuntimeException( 'Cannot create synthetic identity.' ); } }
 wp_set_current_user( $admin ); Requests::activate();
 $page = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Mail fixture', 'post_content' => '[yfr_requests]' ) );
-$config = array( 'new' => 1, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => 'moderators@example.test', 'page_id' => $page );
+$config = array( 'new' => 1, 'receipt' => 0, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => 'moderators@example.test', 'page_id' => $page );
 update_option( N::OPTION, $config );
 $mail = array(); $accept = true;
 $intercept = static function ( $pre, $args ) use ( &$mail, &$accept ) { $mail[] = $args; return $accept; };

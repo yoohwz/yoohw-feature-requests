@@ -1,0 +1,101 @@
+<?php
+/** Submission receipt checks in an explicitly isolated, mail-blocked fixture. */
+use YoOhwFeatureRequests\Requests as R;
+use YoOhwFeatureRequests\Frontend as F;
+use YoOhwFeatureRequests\Notifications as N;
+$marker_path = dirname( rtrim( ABSPATH, '/\\' ) ) . '/fixture.json';
+$marker = is_file( $marker_path ) ? json_decode( file_get_contents( $marker_path ), true ) : null;
+if ( ! is_array( $marker ) || realpath( $marker['root'] ) !== realpath( ABSPATH ) || DB_NAME !== $marker['db'] || 0 !== strpos( DB_NAME, 'yfr_wave1_' ) || null === apply_filters( 'pre_wp_mail', null, array() ) ) { throw new RuntimeException( 'Guarded disposable fixture with mail blocked required.' ); }
+$checks = 0;
+$check = static function ( $ok, $label ) use ( &$checks ) { if ( ! $ok ) { throw new RuntimeException( 'FAIL ' . $label ); } ++$checks; echo 'PASS ' . $label . "\n"; };
+$error = static function ( $result, $code ) { return is_wp_error( $result ) && $code === $result->get_error_code(); };
+$suffix = strtolower( wp_generate_password( 12, false ) );
+$users = array();
+foreach ( array( 'admin' => 'administrator', 'owner' => 'subscriber', 'other' => 'subscriber', 'editor' => 'editor' ) as $name => $role ) {
+    $users[$name] = wp_insert_user( array( 'user_login' => 'behalf_' . $name . '_' . $suffix, 'user_email' => $name . '-' . $suffix . '@example.test', 'user_pass' => wp_generate_password(), 'role' => $role ) );
+    if ( is_wp_error( $users[$name] ) ) { throw new RuntimeException( 'Synthetic identity failed.' ); }
+}
+extract( $users );
+$input = array( 'title' => 'Receipt synthetic title', 'description' => 'PRIVATE BODY source@example.test https://secret.example.test/topic', 'kind' => 'feature' );
+wp_set_current_user( $admin ); R::activate();
+$page = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Receipt fixture', 'post_content' => '[yfr_requests]' ) );
+$old_config = get_option( N::OPTION );
+$config = array( 'new' => 1, 'receipt' => 1, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => 'moderators@example.test', 'page_id' => $page );
+update_option( N::OPTION, $config );
+$mail = array(); $accept = true;
+$intercept = static function ( $pre, $args ) use ( &$mail, &$accept ) { $mail[] = $args; return $accept; }; add_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX, 2 );
+$job = static function ( $id, $type = 'receipt' ) { return get_post_meta( $id, '_yfr_notice_' . $type, true ); };
+$create = static function ( $context = array() ) use ( $input, $owner, $admin ) { wp_set_current_user( $admin ); return R::create_for_user( $input, $owner, $context ); };
+$owner_email = get_userdata( $owner )->user_email;
+wp_set_current_user( $owner );
+$self = R::submit( $input );
+$check( is_int( $self ) && 2 === count( $mail ) && $owner_email === $mail[0]['to'] && 'moderators@example.test' === $mail[1]['to'], 'Self submission independently sends owner receipt and admin review notice' );
+$check( false !== strpos( $mail[0]['subject'], 'has been received' ) && false !== strpos( $mail[0]['message'], 'waiting for moderation' ) && false !== strpos( $mail[0]['message'], 'Pending moderation' ) && false !== strpos( $mail[0]['message'], 'View your request' ) && false === strpos( $mail[0]['message'], 'on your behalf' ), 'Self receipt confirms receipt and includes pending status and owner CTA' );
+$check( 'consumed' === get_post_meta( $self, R::META_RECEIPT, true ) && 'accepted' === $job( $self )['result'], 'New core eligibility consumed and independent receipt job accepted' );
+do_action( 'yoohw_feature_requests_submitted', $self );
+$check( 2 === count( $mail ), 'Completed event replay does not duplicate either message' );
+$mail = array();
+$managed = $create(); $id = $managed['id'];
+$check( 2 === count( $mail ) && $owner_email === $mail[0]['to'] && get_userdata( $admin )->user_email !== $mail[0]['to'], 'Managed receipt routes to persisted owner never acting manager' );
+$check( false !== strpos( $mail[0]['subject'], 'was created on your behalf' ) && false !== strpos( $mail[0]['message'], 'A request moderator created this suggestion on your behalf. It is now waiting for moderation.' ) && 1 === substr_count( $mail[0]['message'], 'on your behalf' ) && false !== strpos( $mail[1]['message'], 'for the request owner' ) && false === strpos( $mail[1]['message'], 'on your behalf' ), 'Managed owner and admin copies identify their correct perspective' );
+$check( false === strpos( $mail[0]['message'], 'PRIVATE BODY' ) && false === strpos( $mail[0]['message'], 'secret.example.test' ) && false === strpos( $mail[0]['message'], 'behalf_admin_' ) && false === strpos( $mail[0]['message'], get_userdata( $admin )->user_email ), 'Receipt excludes body, private source and actor identity' );
+$mail = array(); $deferred = $create( array( 'notify' => false, 'creation_key' => hash( 'sha256', $suffix ) ) );
+$check( ! $mail && 'eligible' === get_post_meta( $deferred['id'], R::META_RECEIPT, true ) && ! $job( $deferred['id'] ), 'Deferred save remains eligible without early email or job' );
+update_post_meta( $deferred['id'], '_synthetic_private_source', 'private topic' );
+do_action( 'yoohw_feature_requests_submitted', $deferred['id'] );
+$check( 2 === count( $mail ) && 'consumed' === get_post_meta( $deferred['id'], R::META_RECEIPT, true ), 'Completed source metadata event then sends receipt and admin copy' );
+$replay = $create( array( 'creation_key' => hash( 'sha256', $suffix ) ) ); do_action( 'yoohw_feature_requests_submitted', $deferred['id'] );
+$check( ! $replay['created'] && 2 === count( $mail ), 'Confirmation replay plus repeated completion cannot resend receipt' );
+$mail = array(); $failed_source = $create( array( 'notify' => false ) ); wp_delete_post( $failed_source['id'], true ); do_action( 'yoohw_feature_requests_submitted', $failed_source['id'] );
+$check( ! $mail, 'Rolled-back source failure cannot send either message' );
+$fail_meta = static function ( $check, $object_id, $meta_key ) { return R::META_RECEIPT === $meta_key ? false : $check; }; add_filter( 'add_post_metadata', $fail_meta, 10, 3 );
+$failed = $create(); remove_filter( 'add_post_metadata', $fail_meta );
+$check( is_wp_error( $failed ) && ! $mail, 'Missing initial eligibility fails core readback before notification' );
+$config['new'] = 0; update_option( N::OPTION, $config ); $only_receipt = $create();
+$check( 1 === count( $mail ) && $owner_email === $mail[0]['to'] && ! $job( $only_receipt['id'], 'new' ), 'Receipt setting independent of disabled admin notice' );
+$mail = array(); $config['receipt'] = 0; $config['new'] = 1; update_option( N::OPTION, $config ); $only_admin = $create();
+$check( 1 === count( $mail ) && 'moderators@example.test' === $mail[0]['to'] && ! $job( $only_admin['id'] ) && 'consumed' === get_post_meta( $only_admin['id'], R::META_RECEIPT, true ), 'Disabled receipt consumed while independent admin notice remains enabled' );
+$mail = array(); $config['receipt'] = 1; update_option( N::OPTION, $config ); do_action( 'yoohw_feature_requests_submitted', $only_admin['id'] );
+$check( ! $mail && ! $job( $only_admin['id'] ), 'Enabling receipts and replay cannot backfill disabled-era requests' );
+$legacy = wp_insert_post( array( 'post_type' => R::TYPE, 'post_status' => 'pending', 'post_author' => $owner, 'post_title' => 'Legacy historical request' ) ); do_action( 'yoohw_feature_requests_submitted', $legacy );
+$check( ! $job( $legacy ) && ! get_post_meta( $legacy, R::META_RECEIPT, true ), 'Old requests without eligibility never receive a backfilled receipt' );
+$mail = array(); $config['new'] = 0; $config['page_id'] = 0; update_option( N::OPTION, $config ); $no_cta = $create();
+$check( 1 === count( $mail ) && false === strpos( $mail[0]['message'], 'View your request' ) && false === strpos( $mail[0]['message'], 'href=' ), 'Missing valid owner page omits CTA without losing receipt' );
+$mail = array(); $config['page_id'] = $page; update_option( N::OPTION, $config );
+$race_id = 0; $nested = false;
+$race = static function ( $check, $post_id, $key, $value, $prev ) use ( &$nested, &$race_id ) { if ( R::META_RECEIPT === $key && 'consumed' === $value && ! $nested ) { $nested = true; $race_id = $post_id; do_action( 'yoohw_feature_requests_submitted', $post_id ); } return $check; };
+add_filter( 'update_post_metadata', $race, 10, 5 ); $concurrent = $create(); remove_filter( 'update_post_metadata', $race );
+$check( $nested && $race_id === $concurrent['id'] && 1 === count( $mail ), 'CAS receipt eligibility allows one winner under concurrent nested completion' );
+$mail = array(); $accept = false; $retry = $create(); $retry_id = $retry['id']; $pending = $job( $retry_id );
+$check( 1 === count( $mail ) && 1 === $pending['attempts'] && 'pending' === $pending['result'], 'Failed owner receipt queues its own bounded retry' );
+$accept = true; N::deliver( $retry_id, 'receipt', $pending['token'] ); N::deliver( $retry_id, 'receipt', $pending['token'] );
+$check( 2 === count( $mail ) && 'accepted' === $job( $retry_id )['result'] && ! $job( $retry_id, 'new' ), 'Receipt retry succeeds once without creating admin jobs' );
+$mail = array(); $accept = false; $exhausted = $create(); $pending = $job( $exhausted['id'] ); for ( $n = 0; $n < 4; ++$n ) { N::deliver( $exhausted['id'], 'receipt', $pending['token'] ); }
+$check( 3 === count( $mail ) && 'failed' === $job( $exhausted['id'] )['result'], 'Owner receipt stops after three transport attempts' );
+$mail = array(); $changed_owner = $create(); $pending = $job( $changed_owner['id'] ); wp_update_post( array( 'ID' => $changed_owner['id'], 'post_author' => $other ) ); $accept = true; N::deliver( $changed_owner['id'], 'receipt', $pending['token'] );
+$check( 1 === count( $mail ) && 'cancelled' === $job( $changed_owner['id'] )['result'], 'Owner change cancels retry instead of sending to old or replacement user' );
+$mail = array(); $accept = false; $revision = $create(); $pending = $job( $revision['id'] ); $config['receipt'] = 0; update_option( N::OPTION, $config ); $config['receipt'] = 1; update_option( N::OPTION, $config ); $accept = true; N::deliver( $revision['id'], 'receipt', $pending['token'] );
+$check( 1 === count( $mail ) && 'cancelled' === $job( $revision['id'] )['result'], 'Settings revision cancels queued receipt across disable and re-enable' );
+$mail = array(); $config['new'] = 1; update_option( N::OPTION, $config ); $accept = false; $isolated = $create(); $rid = $isolated['id']; $receipt_job = $job( $rid ); $admin_job = $job( $rid, 'new' ); $accept = true; N::deliver( $rid, 'new', $admin_job['token'] );
+$check( 'pending' === $job( $rid )['result'] && 'accepted' === $job( $rid, 'new' )['result'], 'Admin retry state never consumes pending receipt retry' );
+N::deliver( $rid, 'receipt', $receipt_job['token'] );
+$check( 'accepted' === $job( $rid )['result'] && 'accepted' === $job( $rid, 'new' )['result'], 'Both notification types complete with independent jobs' );
+$clean = N::sanitize( array( 'receipt' => '1', 'admin_email' => '', 'page_id' => '0' ) );
+$check( 1 === $clean['receipt'] && 0 === $clean['new'] && 0 === $clean['moderation'], 'Settings sanitizer treats receipt checkbox independently' );
+$mail = array(); $accept = false; $snapshot = $create(); $pending = $job( $snapshot['id'] ); update_post_meta( $snapshot['id'], R::META_STATE, 'planned' ); $accept = true; N::deliver( $snapshot['id'], 'receipt', $pending['token'] );
+$check( 2 === count( $mail ) && 'cancelled' === $job( $snapshot['id'] )['result'], 'Changed request snapshot cancels receipt retry without stale content' );
+$mail = array(); $config['new'] = 0; update_option( N::OPTION, $config );
+$bad_url = static function () { return 'https://untrusted.example.test/private'; }; add_filter( 'yoohw_feature_requests_notification_url', $bad_url ); $unsafe = $create(); remove_filter( 'yoohw_feature_requests_notification_url', $bad_url );
+$check( 1 === count( $mail ) && false === strpos( $mail[0]['message'], 'untrusted.example.test' ) && false === strpos( $mail[0]['message'], 'href=' ), 'Foreign author URL rejected for receipt CTA' );
+$mail = array(); $unpublished = $create( array( 'notify' => false ) ); wp_update_post( array( 'ID' => $unpublished['id'], 'post_status' => 'trash' ) ); do_action( 'yoohw_feature_requests_submitted', $unpublished['id'] );
+$check( ! $mail && 'consumed' === get_post_meta( $unpublished['id'], R::META_RECEIPT, true ) && ! $job( $unpublished['id'] ), 'Completed event consumes eligibility even if no longer pending' );
+$missing = R::create_for_user( $input, PHP_INT_MAX );
+$check( is_wp_error( $missing ) && ! $mail, 'Missing owner cannot produce a receipt' );
+$users['deleted'] = wp_insert_user( array( 'user_login' => 'receipt_deleted_' . $suffix, 'user_email' => 'deleted-' . $suffix . '@example.test', 'user_pass' => wp_generate_password(), 'role' => 'subscriber' ) );
+$accept = false; $deleted = R::create_for_user( $input, $users['deleted'] ); $pending = $job( $deleted['id'] ); require_once ABSPATH . 'wp-admin/includes/user.php'; wp_delete_user( $users['deleted'] ); $accept = true; N::deliver( $deleted['id'], 'receipt', $pending['token'] );
+$check( 1 === count( $mail ) && ! get_userdata( $users['deleted'] ) && ( ! get_post( $deleted['id'] ) || 'cancelled' === $job( $deleted['id'] )['result'] ), 'Deleted owner cannot receive a queued receipt' );
+remove_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX );
+foreach ( $users as $user_id ) { foreach ( get_posts( array( 'post_type' => R::TYPE, 'post_status' => R::STATUSES, 'author' => $user_id, 'posts_per_page' => -1 ) ) as $post ) { $j = $job( $post->ID ); if ( $j ) { wp_clear_scheduled_hook( N::RETRY, array( $post->ID, 'receipt', $j['token'] ) ); } wp_delete_post( $post->ID, true ); } delete_transient( 'yfr_submit_' . $user_id ); }
+wp_delete_post( $page, true ); update_option( N::OPTION, $old_config );
+require_once ABSPATH . 'wp-admin/includes/user.php'; wp_set_current_user( 0 ); foreach ( $users as $user_id ) { wp_delete_user( $user_id ); }
+echo "PASS $checks receipt assertions\n";

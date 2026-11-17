@@ -25,6 +25,8 @@ final class Admin {
 	}
 
 	public static function details( $post ) {
+		$note = Frontend::creation_note( $post );
+		if ( $note ) { echo '<p>' . esc_html( $note ) . '</p>'; }
 		wp_nonce_field( 'yfr_details_' . $post->ID, 'yfr_details_nonce' );
 		self::select( 'yfr_kind', __( 'Request type', 'yoohw-feature-requests' ), Requests::kinds(), get_post_meta( $post->ID, Requests::META_KIND, true ) ?: 'feature' );
 		self::select( 'yfr_state', __( 'Roadmap status', 'yoohw-feature-requests' ), Requests::states(), get_post_meta( $post->ID, Requests::META_STATE, true ) ?: 'under_review' );

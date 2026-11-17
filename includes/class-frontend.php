@@ -128,6 +128,8 @@ final class Frontend {
 						<?php if ( $reference ) : ?>
 							<p><a href="<?php echo esc_url( $reference, array( 'http', 'https' ) ); ?>" rel="nofollow ugc"><?php esc_html_e( 'Reference link', 'yoohw-feature-requests' ); ?></a></p>
 						<?php endif; ?>
+						<?php $note = self::creation_note( $request ); if ( $note ) : ?><p class="yfr-creation-note"><?php echo esc_html( $note ); ?></p><?php endif; ?>
+						<?php do_action( 'yoohw_feature_requests_details', $request ); ?>
 					</article>
 				<?php else : ?>
 					<p class="yfr-notice" role="status"><?php esc_html_e( 'Request unavailable.', 'yoohw-feature-requests' ); ?></p>
@@ -141,6 +143,22 @@ final class Frontend {
 		</div>
 		<?php
 		return ob_get_clean();
+	}
+
+	/** Plain text; callers must escape for their output context. */
+	public static function creation_note( $post ) {
+		$post = get_post( $post );
+		if ( ! Requests::can_view( $post ) ) { return ''; }
+		$actor = (int) get_post_meta( $post->ID, Requests::META_CREATED_BY, true );
+		if ( ! $actor || $actor === (int) $post->post_author ) { return ''; }
+		$user = get_userdata( $actor );
+		$name = $user ? $user->display_name : __( 'Request moderator', 'yoohw-feature-requests' );
+		if ( get_current_user_id() === (int) $post->post_author ) {
+			/* translators: %s: moderator display name. */
+			return sprintf( __( 'Created by %s on your behalf.', 'yoohw-feature-requests' ), $name );
+		}
+		/* translators: %s: moderator display name. */
+		return sprintf( __( 'Created by %s for the request owner.', 'yoohw-feature-requests' ), $name );
 	}
 
 	public static function meta( $request ) {
