@@ -72,3 +72,13 @@ before code and independent final review before handing the same PR to Human.
 Local Mailpit demos use synthetic marked records with loopback-only transport,
 without disabling persistent mail/network safety guards. No merge/release/publish
 or production deployment.
+
+Plan challenge correction: old adapter confirmations can re-fire submitted after
+upgrade. A new-request-only receipt eligibility metadata marker must therefore
+be persisted/read back by core creation. Consume it at the first successful
+completed-submission handling, including when receipts are disabled; absent or
+consumed markers cannot produce a receipt. A small compare-and-set metadata
+transition may claim that one receipt before using the existing queue. Deferred
+source operations keep eligibility until source readback completes. Test old
+pre-receipt request replay and disabled->enabled replay explicitly. No backfill
+from absence of `_yfr_notice_receipt` alone. Reviewer: receipt_plan_challenge.
