@@ -1,0 +1,8 @@
+.DS_Store
+.env
+.env.*
+vendor/
+node_modules/
+artifacts/
+*.log
+*.zip

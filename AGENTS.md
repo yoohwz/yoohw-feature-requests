@@ -10,4 +10,4 @@
 - Record scope, invariants and meaningful test scenarios in the existing PR before risky persistence/security implementation. Use a fresh independent subagent for the plan challenge and final security/persistence review; provide source/diff and test evidence. Fix findings in the same PR.
 - Tests must use an isolated WordPress fixture with synthetic identities, never production or an existing customer database. Mark unavailable checks honestly.
 - Run PHP syntax, focused WordPress runtime tests, distribution staging and Plugin Check. Keep development files out of the payload. Do not add release automation in Wave 1.
-- Deactivation and uninstall retain requests, taxonomy terms and request metadata. No destructive cleanup without separately approved semantics.
+- Deactivation and uninstall retain requests, taxonomy terms and request metadata. The WordPress confirmed personal-data eraser deletes only the identified user's requests and their revisions/metadata, retaining shared taxonomy terms. Do not add other destructive cleanup.

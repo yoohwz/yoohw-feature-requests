@@ -20,7 +20,7 @@ No public community board, voting, merge, follower notifications, guest submissi
 - Mutations use POST, nonce, login/capability checks, strict scalar validation, bounded content, existing term IDs and safe URL schemes. Rate limit per-account submissions and pending backlog; do not collect IP addresses or call external services.
 - Output is escaped; description HTML is limited on input and output. Shortcode output returns rather than echoes. Personal views set no-cache headers early when the page contains the shortcode.
 - Admin metadata saves honor nonce, capability, autosave/revision guards and allowlisted values. Saving another post type must not write YFR data.
-- Deactivate/uninstall retain request data; document retention, privacy export/erase and manual deletion. No schema migration, locks or recovery framework is needed.
+- Deactivate/uninstall retain request data. WordPress's confirmed privacy eraser permanently deletes only the identified user's requests (including revisions, metadata and term relationships), retains shared taxonomy terms, and works in batches without skipping records after deletion. No schema migration, locks or recovery framework is needed.
 - No writes to existing Workspace/Support/website source or databases.
 
 ## Validation
@@ -32,3 +32,7 @@ Run PHP 7.4 and 8.2 syntax/runtime where available; WordPress 6.2 floor and curr
 ## Complexity budget
 
 Plain PHP classes/templates, scoped CSS and one shortcode. No JavaScript is required for Wave 1. A small CI workflow runs syntax/runtime checks and staged Plugin Check; no release jobs or custom gate engine. Stop and revise the technical plan if persistence requires custom tables or guest identity, or if implementation starts changing host integrations; those belong outside Wave 1.
+
+## Independent plan challenge
+
+`yfr_plan_challenge` reviewed this plan before runtime implementation on 2026-11-17. Adopted: explicit non-public CPT flags and custom capabilities; frontend-only creation for ordinary users; confirmed privacy erasure of the owner's requests rather than incomplete attribution-only anonymization; server-side throttle (60 seconds) and pending backlog (5), not a strict concurrent quota; early no-cache; fixture marker/root/database guards. No architecture blocker or additional infrastructure was identified.
