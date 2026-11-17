@@ -101,12 +101,16 @@ final class Frontend {
 	}
 
 	public static function render() {
+		static $instance = 0;
+		++$instance;
+		// Keep the existing redirect/link anchor on the first instance only.
+		$yoohw_feature_requests_id = 'yfr-requests' . ( 1 === $instance ? '' : '-' . $instance );
 		if ( ! headers_sent() ) {
 			nocache_headers();
 		}
 		ob_start();
 		?>
-		<div class="yfr" id="yfr-requests">
+		<div class="yfr" id="<?php echo esc_attr( $yoohw_feature_requests_id ); ?>">
 		<?php if ( ! is_user_logged_in() ) : ?>
 			<h2><?php esc_html_e( 'Feature Requests', 'yoohw-feature-requests' ); ?></h2>
 			<p><?php esc_html_e( 'Log in to suggest a feature, plugin or integration and follow your submissions.', 'yoohw-feature-requests' ); ?></p>

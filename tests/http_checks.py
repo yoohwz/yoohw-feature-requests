@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """HTTP integration checks. Refuses unmarked or non-loopback fixtures."""
 import http.cookiejar
+from html.parser import HTMLParser
 import json
 import pathlib
 import re
@@ -37,7 +38,7 @@ $owner=wp_insert_user(['user_login'=>'yfr_http_owner_{suffix}','user_email'=>'yf
 $other=wp_insert_user(['user_login'=>'yfr_http_other_{suffix}','user_email'=>'yfr-http-other-{suffix}@example.test','user_pass'=>'{password}','role'=>'subscriber']);
 $editor=wp_insert_user(['user_login'=>'yfr_http_editor_{suffix}','user_email'=>'yfr-http-editor-{suffix}@example.test','user_pass'=>'{password}','role'=>'editor']);
 $admin=wp_insert_user(['user_login'=>'yfr_http_admin_{suffix}','user_email'=>'yfr-http-admin-{suffix}@example.test','user_pass'=>'{password}','role'=>'administrator']);
-$page=wp_insert_post(['post_type'=>'page','post_status'=>'publish','post_title'=>'YFR HTTP {suffix}','post_content'=>'[yfr_requests]']);
+$page=wp_insert_post(['post_type'=>'page','post_status'=>'publish','post_title'=>'YFR HTTP {suffix}','post_content'=>"[yfr_requests]\n[yfr_requests]"]);
 echo wp_json_encode(['owner'=>$owner,'other'=>$other,'editor'=>$editor,'admin'=>$admin,'page'=>$page,'url'=>get_permalink($page)]);
 ''')
 data = json.loads(seed)
@@ -59,6 +60,59 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def browser():
     return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), NoRedirect())
+
+
+class ShortcodeMarkup(HTMLParser):
+    """Inspect IDs and associations within each shortcode's rendered container."""
+    def __init__(self, html):
+        super().__init__()
+        self.instances = []
+        self.current = None
+        self.depth = 0
+        self.root_depth = 0
+        self.feed(html)
+
+    def handle_starttag(self, tag, attributes):
+        attrs = dict(attributes)
+        if tag == 'div':
+            self.depth += 1
+            if self.current is None and 'yfr' in attrs.get('class', '').split():
+                self.current = {'ids': [], 'labels': [], 'references': [], 'controls': {}, 'hidden': {}, 'forms': 0}
+                self.instances.append(self.current)
+                self.root_depth = self.depth
+        if self.current is not None:
+            if attrs.get('id'):
+                self.current['ids'].append(attrs['id'])
+            if tag == 'label':
+                self.current['labels'].append(attrs.get('for'))
+            for key in ('aria-labelledby', 'aria-describedby'):
+                self.current['references'].extend(attrs.get(key, '').split())
+            if tag == 'form':
+                self.current['forms'] += 1
+            if tag in ('input', 'select', 'textarea') and attrs.get('name'):
+                if attrs.get('type') == 'hidden':
+                    self.current['hidden'][attrs['name']] = attrs.get('value', '')
+                else:
+                    self.current['controls'][attrs['name']] = attrs.get('id')
+
+    def handle_endtag(self, tag):
+        if tag == 'div':
+            if self.depth == self.root_depth:
+                self.current = None
+            self.depth -= 1
+
+
+def shortcode_markup(html, expected_forms):
+    markup = ShortcodeMarkup(html)
+    check(len(markup.instances) == 2, 'both shortcode instances render')
+    ids = [element_id for instance in markup.instances for element_id in instance['ids']]
+    check(len(ids) == len(set(ids)), 'shortcodes never duplicate IDs')
+    check(ids.count('yfr-requests') == 1, 'existing return anchor remains a unique target')
+    for instance in markup.instances:
+        check(instance['forms'] == expected_forms, 'each shortcode has the expected form visibility')
+        check(all(target in instance['ids'] for target in instance['controls'].values()) and set(instance['labels']) == set(instance['controls'].values()), 'every control has an associated label inside the same shortcode')
+        check(len(instance['references']) == (3 if expected_forms else 0) and all(target in instance['ids'] for target in instance['references']), 'ARIA references resolve inside the same shortcode')
+    return markup
 
 
 def request(client, url, values=None):
@@ -84,12 +138,17 @@ def login(role):
 anon = browser()
 code, headers, body = request(anon, page)
 check(code == 200 and 'Log in to suggest' in body and 'name="yfr_nonce"' not in body, 'anonymous form boundary')
+shortcode_markup(body, 0)
 check('no-cache' in headers.get('Cache-Control', ''), 'no-cache sent before rendering')
 check(request(anon, base + '/wp-admin/admin-post.php?action=yfr_submit')[0] == 405, 'GET cannot mutate')
 check(request(anon, base + '/wp-admin/admin-post.php', {'action': 'yfr_submit'})[0] == 403, 'anonymous POST denied')
 owner = login('owner')
 _, _, body = request(owner, page)
-nonce = re.search(r'name="yfr_nonce" value="([^"]+)"', body).group(1)
+forms = shortcode_markup(body, 1).instances
+for form in forms:
+    check(set(form['controls']) >= {'kind', 'title', 'description', 'reference_url'}, 'every form exposes all required request fields')
+    check(form['hidden']['action'] == 'yfr_submit' and form['hidden']['yfr_page'] == str(data['page']), 'form identity and page fields retain their request contract')
+nonce = forms[1]['hidden']['yfr_nonce']
 payload = {'action': 'yfr_submit', 'yfr_nonce': nonce, 'yfr_page': data['page'],
            'kind': 'integration', 'title': 'HTTP private token ' + suffix,
            'description': '<p>Owner-only idea for a useful integration.</p><script>alert(1)</script>',
@@ -111,12 +170,20 @@ check(record['author'] == data['owner'] and record['status'] == 'pending' and re
 check('<script' not in record['content'], 'script removed before storage')
 code, _, body = request(owner, location)
 check(code == 200 and payload['title'] in body and 'awaiting moderation' in body, 'owner sees confirmation and pending detail')
+shortcode_markup(body, 0)
 _, _, body = request(owner, page)
 check(payload['title'] in body, 'owner personal list')
 code, headers, _ = request(owner, base + '/wp-admin/admin-post.php', payload)
 check(code == 303 and 'yfr_notice=error' in headers.get('Location', ''), 'repeat submission throttled')
 _, _, body = request(owner, headers['Location'])
 check('wait one minute' in body, 'throttle explained')
+# Submit the first form too, clearing only this synthetic account's test throttle.
+cli('transient', 'delete', 'yfr_submit_' + str(data['owner']))
+first_payload = dict(payload, yfr_nonce=forms[0]['hidden']['yfr_nonce'], title='First form request ' + suffix)
+code, headers, _ = request(owner, base + '/wp-admin/admin-post.php', first_payload)
+check(code == 303 and 'yfr_request=' in headers.get('Location', ''), 'the first form can also submit normally')
+first_id = int(urllib.parse.parse_qs(urllib.parse.urlparse(headers['Location']).query)['yfr_request'][0])
+check(first_id != post_id and cli('post', 'get', str(first_id), '--field=post_status') == 'pending', 'each form creates its own pending request without changing publication authority')
 for role in ('other', 'editor'):
     client = login(role)
     _, _, body = request(client, page)
