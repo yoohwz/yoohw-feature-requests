@@ -64,7 +64,9 @@ jobs:
           ln -s "$GITHUB_WORKSPACE" /tmp/yfr-wave1-ci/wordpress/wp-content/plugins/yoohw-feature-requests
           wp plugin activate yoohw-feature-requests --path=/tmp/yfr-wave1-ci/wordpress
       - name: Request management and privacy runtime tests
-        run: wp eval-file tests/runtime.php --path=/tmp/yfr-wave1-ci/wordpress
+        run: |
+          wp eval-file tests/runtime.php --path=/tmp/yfr-wave1-ci/wordpress
+          wp eval-file tests/notifications.php --path=/tmp/yfr-wave1-ci/wordpress
       - name: HTTP authorization and moderation tests
         run: |
           php -S 127.0.0.1:8791 -t /tmp/yfr-wave1-ci/wordpress > /tmp/yfr-http.log 2>&1 &

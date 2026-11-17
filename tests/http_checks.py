@@ -253,3 +253,21 @@ check(filtered_rows({'yfr_product': filters['product']}) == {ids['both'], ids['p
 check(filtered_rows({'yfr_category': filters['category'], 'yfr_product': filters['product'], 'yfr_state_filter': 'planned'}) == {ids['both']}, 'category, product and roadmap filters intersect')
 check(filtered_rows({'yfr_category': '0', 'yfr_product': '0', 'yfr_state_filter': ''}) == set(ids.values()), 'reset dropdowns restore all matching rows')
 print(f'PASS HTTP {passed} assertions ({base})')
+
+# Settings API must enforce site-administrator capability and its native nonce.
+settings_url = base + '/wp-admin/edit.php?post_type=yfr_request&page=yfr-notifications'
+code, _, settings_html = request(admin, settings_url)
+check(code == 200 and 'yfr_notifications[admin_email]' in settings_html, 'administrator can configure email notifications')
+settings_nonce = re.search(r'name="_wpnonce" value="([^"]+)"', settings_html).group(1)
+settings_payload = {'action': 'update', 'option_page': 'yfr_notifications', '_wpnonce': settings_nonce,
+                    '_wp_http_referer': settings_url, 'yfr_notifications[new]': '1',
+                    'yfr_notifications[moderation]': '1', 'yfr_notifications[roadmap]': '1',
+                    'yfr_notifications[admin_email]': 'http-moderator@example.test', 'yfr_notifications[page_id]': str(data['page'])}
+code, _, _ = request(admin, base + '/wp-admin/options.php', settings_payload)
+config_saved = json.loads(cli('eval', 'echo wp_json_encode(get_option("yfr_notifications"));'))
+check(code == 302 and config_saved['admin_email'] == 'http-moderator@example.test' and int(config_saved['page_id']) == data['page'], 'native settings save persists validated values')
+for actor, payload_bad in [(owner, settings_payload), (admin, {**settings_payload, '_wpnonce': 'invalid'})]:
+    code, _, _ = request(actor, base + '/wp-admin/options.php', {**payload_bad, 'yfr_notifications[admin_email]': 'forged@example.test'})
+    config_after = json.loads(cli('eval', 'echo wp_json_encode(get_option("yfr_notifications"));'))
+    check(code in (302, 403) and config_after == config_saved, 'unauthorized or bad-nonce settings update changes nothing')
+print(f'PASS HTTP including notifications settings: {passed} assertions ({base})')

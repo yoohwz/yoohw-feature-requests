@@ -207,6 +207,10 @@ final class Requests {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
+		if ( ! $id || get_post_meta( $id, self::META_KIND, true ) !== $data['kind'] || get_post_meta( $id, self::META_STATE, true ) !== 'under_review' || get_post_meta( $id, self::META_URL, true ) !== $data['url'] ) {
+			if ( $id ) { wp_delete_post( $id, true ); }
+			return new \WP_Error( 'save_failed', __( 'The request could not be saved. Please try again.', 'yoohw-feature-requests' ) );
+		}
 		foreach ( $data['terms'] as $taxonomy => $term_id ) {
 			if ( $term_id ) {
 				$result = wp_set_object_terms( $id, array( $term_id ), $taxonomy );
@@ -216,6 +220,7 @@ final class Requests {
 				}
 			}
 		}
+		do_action( 'yoohw_feature_requests_submitted', $id );
 		set_transient( 'yfr_submit_' . $user_id, 1, MINUTE_IN_SECONDS );
 		return $id;
 	}
