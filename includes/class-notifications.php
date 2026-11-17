@@ -137,17 +137,11 @@ final class Notifications {
 			$subject = sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $status_label );
 			$intro = __( 'There is a new roadmap update for your request.', 'yoohw-feature-requests' );
 		}
-		$lines = array( $intro );
-		/* translators: 1: Request ID, 2: Request title. */
-		$lines[] = sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $job['title'] );
+		$details = array();
 		if ( 'new' === $type ) {
-			$lines[] = __( 'Review the details and choose whether to approve the suggestion for consideration or mark it as not approved.', 'yoohw-feature-requests' );
+			$details[] = __( 'Review the details and choose whether to approve the suggestion for consideration or mark it as not approved.', 'yoohw-feature-requests' );
 		} else {
-			if ( ! empty( $job['events']['moderation'] ) ) {
-				$lines[] = __( 'Moderation:', 'yoohw-feature-requests' ) . ' ' . Requests::moderation_label( $post );
-			}
 			if ( 'publish' === $job['after']['status'] ) {
-				$lines[] = __( 'Roadmap:', 'yoohw-feature-requests' ) . ' ' . $status_label;
 				$context = array(
 					'under_review' => __( 'The suggestion is being reviewed. Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' ),
 					'planned' => __( 'The suggestion is included in the current plan. Scope and timing may change. Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' ),
@@ -155,17 +149,17 @@ final class Notifications {
 					'released' => __( 'This suggestion is now marked as released. Refer to the related product\'s release notes for availability and update instructions.', 'yoohw-feature-requests' ),
 					'declined' => __( 'This suggestion is not planned for implementation at this time. Thank you for helping us understand what you need.', 'yoohw-feature-requests' ),
 				);
-				if ( isset( $context[ $job['after']['state'] ] ) ) { $lines[] = $context[ $job['after']['state'] ]; }
+				if ( isset( $context[ $job['after']['state'] ] ) ) { $details[] = $context[ $job['after']['state'] ]; }
 			}
 		}
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
-		if ( $url ) { $lines[] = ( 'new' === $type ? __( 'Review request:', 'yoohw-feature-requests' ) : __( 'View your request:', 'yoohw-feature-requests' ) ) . ' ' . $url; }
+		$message = self::email_content( $id, $job, $type, $intro, $details, $url );
 		$previous = $job;
 		++$job['attempts'];
 		// Persist attempt before transport; no exactly-once delivery guarantee is possible.
 		if ( ! update_post_meta( $id, $key, $job, $previous ) ) { return; }
 		$claimed = $job;
-		$accepted = wp_mail( $recipient, $subject, implode( "\n\n", $lines ) );
+		$accepted = wp_mail( $recipient, $subject, $message, array( 'Content-Type: text/html; charset=UTF-8' ) );
 		$current = get_post_meta( $id, $key, true );
 		if ( ! is_array( $current ) || $current['token'] !== $token ) { return; }
 		$job['result'] = $accepted ? 'accepted' : ( $job['attempts'] >= 3 ? 'failed' : 'pending' );
@@ -174,6 +168,43 @@ final class Notifications {
 		if ( 'pending' === $job['result'] && ! wp_next_scheduled( self::RETRY, array( $id, $type, $token ) ) ) {
 			wp_schedule_single_event( time() + 5 * MINUTE_IN_SECONDS, self::RETRY, array( $id, $type, $token ) );
 		}
+	}
+
+	/** An HTML content fragment only; the host's shared email shell is untouched. */
+	private static function email_content( $id, $job, $type, $intro, $details, $url ) {
+		$colors = array(
+			'pending' => array( '#fef3c7', '#78350f' ),
+			'publish' => array( '#dcfce7', '#14532d' ),
+			'draft' => array( '#f1f5f9', '#334155' ),
+			'planned' => array( '#dbeafe', '#1e3a8a' ),
+			'in_progress' => array( '#fef3c7', '#78350f' ),
+			'released' => array( '#dcfce7', '#14532d' ),
+			'declined' => array( '#fee2e2', '#7f1d1d' ),
+		);
+		$statuses = array();
+		if ( 'new' === $type || ! empty( $job['events']['moderation'] ) ) {
+			$statuses[] = array( __( 'Moderation:', 'yoohw-feature-requests' ), Requests::moderation_label( (object) array( 'post_status' => $job['after']['status'] ) ), $job['after']['status'] );
+		}
+		if ( 'publish' === $job['after']['status'] ) {
+			$statuses[] = array( __( 'Roadmap:', 'yoohw-feature-requests' ), Requests::states()[ $job['after']['state'] ] ?? Requests::states()['under_review'], $job['after']['state'] );
+		}
+		$html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65;color:#1f2937;">';
+		$html .= '<p style="margin:0 0 20px;">' . esc_html( $intro ) . '</p>';
+		$html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;border:1px solid #dbe2ea;border-radius:10px;background-color:#f8fafc;"><tr><td style="padding:20px;">';
+		/* translators: %d: Request ID. */
+		$html .= '<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#64748b;">' . esc_html( sprintf( __( 'REQUEST #%d', 'yoohw-feature-requests' ), $id ) ) . '</p>';
+		$html .= '<h2 style="margin:0 0 16px;font-size:19px;line-height:1.4;font-weight:700;color:#182231;overflow-wrap:anywhere;">' . esc_html( $job['title'] ) . '</h2>';
+		foreach ( $statuses as $row ) {
+			$palette = $colors[ $row[2] ] ?? array( '#f1f5f9', '#334155' );
+			$html .= '<p style="margin:10px 0 0;font-size:13px;"><span style="color:#475569;">' . esc_html( $row[0] ) . '</span> <span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;background-color:' . esc_attr( $palette[0] ) . ';color:' . esc_attr( $palette[1] ) . ';">' . esc_html( $row[1] ) . '</span></p>';
+		}
+		$html .= '</td></tr></table>';
+		foreach ( $details as $detail ) { $html .= '<p style="margin:0 0 20px;color:#475569;">' . esc_html( $detail ) . '</p>'; }
+		if ( $url ) {
+			$label = 'new' === $type ? __( 'Review request', 'yoohw-feature-requests' ) : __( 'View your request', 'yoohw-feature-requests' );
+			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 8px;"><tr><td style="border-radius:8px;background-color:#1f2937;"><a href="' . esc_url( $url ) . '" style="display:inline-block;padding:13px 20px;border:1px solid #1f2937;border-radius:8px;background-color:#1f2937;color:#ffffff;font-size:14px;font-weight:700;line-height:1.4;text-decoration:none;">' . esc_html( $label ) . '</a></td></tr></table>';
+		}
+		return $html . '</div>';
 	}
 
 	public static function request_url( $id ) {

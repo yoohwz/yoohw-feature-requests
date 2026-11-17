@@ -35,3 +35,11 @@ Independent plan challenge confirmed the completion boundaries above and the
 partial-write risk in Workspace. Final security/persistence review and focused
 runtime/HTTP, staging and Plugin Check are required before handoff. No release,
 publication, merge or production deployment is authorized.
+
+
+Email presentation uses a self-contained inline HTML content fragment: an intro,
+request title/ID card, labeled status badges and one action link styled as a
+button. Status explanations and subjects differ by event. No remote images,
+stylesheets, request description or account identity are added. The shared host
+email shell/header/footer and branding remain unchanged; the fragment also works
+without a host template. Every dynamic string/URL is escaped.
