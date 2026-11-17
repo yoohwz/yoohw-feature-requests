@@ -52,6 +52,7 @@ final class Admin {
 			return;
 		}
 		if ( ! isset( $_POST['yfr_details_nonce'] ) || ! is_string( $_POST['yfr_details_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['yfr_details_nonce'] ) ), 'yfr_details_' . $post_id ) ) {
+			if ( isset( $_POST['yfr_details_nonce'] ) ) { Notifications::cancel( $post_id ); }
 			return;
 		}
 		$kind  = sanitize_text_field( isset( $_POST['yfr_kind'] ) ? wp_unslash( $_POST['yfr_kind'] ) : '' );
@@ -59,12 +60,14 @@ final class Admin {
 		$url   = isset( $_POST['yfr_reference_url'] ) ? wp_unslash( $_POST['yfr_reference_url'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Requests::validate rejects unsafe schemes and sanitizes accepted URLs before persistence.
 		$data  = Requests::validate( array( 'title' => 'Request details', 'description' => 'Request details validation.', 'kind' => $kind, 'reference_url' => $url ) );
 		if ( is_wp_error( $data ) || ! isset( Requests::states()[ $state ] ) ) {
+			Notifications::cancel( $post_id );
 			set_transient( 'yfr_admin_error_' . get_current_user_id(), 1, MINUTE_IN_SECONDS );
 			return;
 		}
 		update_post_meta( $post_id, Requests::META_KIND, $kind );
 		update_post_meta( $post_id, Requests::META_STATE, $state );
 		update_post_meta( $post_id, Requests::META_URL, $data['url'] );
+		if ( get_post_meta( $post_id, Requests::META_KIND, true ) !== $kind || get_post_meta( $post_id, Requests::META_STATE, true ) !== $state || get_post_meta( $post_id, Requests::META_URL, true ) !== $data['url'] ) { Notifications::cancel( $post_id ); }
 	}
 
 	public static function notice() {

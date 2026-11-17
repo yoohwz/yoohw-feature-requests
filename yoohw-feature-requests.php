@@ -21,6 +21,7 @@ define( 'YFR_FILE', __FILE__ );
 define( 'YFR_PATH', plugin_dir_path( __FILE__ ) );
 
 require_once YFR_PATH . 'includes/class-requests.php';
+require_once YFR_PATH . 'includes/class-notifications.php';
 require_once YFR_PATH . 'includes/class-admin.php';
 require_once YFR_PATH . 'includes/class-frontend.php';
 require_once YFR_PATH . 'includes/class-privacy.php';
@@ -31,3 +32,5 @@ add_filter( 'map_meta_cap', array( 'YoOhwFeatureRequests\\Requests', 'map_read_c
 YoOhwFeatureRequests\Admin::boot();
 YoOhwFeatureRequests\Frontend::boot();
 YoOhwFeatureRequests\Privacy::boot();
+
+YoOhwFeatureRequests\Notifications::boot();

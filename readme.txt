@@ -64,3 +64,14 @@ Request title, description, WordPress author ID, type, category/product, referen
 
 = 0.1.0 =
 * Initial development candidate: authenticated submission, private tracking, moderation and roadmap status management.
+
+== Email notifications ==
+
+Site administrators configure notification types, one moderation recipient and
+an optional published [yfr_requests] Page under Feature Requests > Email
+notifications. New submissions notify moderation; completed moderation and
+published roadmap changes notify the author. No follower or receipt emails.
+WordPress mail configuration is reused; no SaaS or Support plugin is required.
+Messages include title/status, not request descriptions. Failed delivery retries
+up to three attempts using WP-Cron; accepted mail does not prove inbox delivery.
+No historical backfill. Existing data remains retained on deactivation/uninstall.
