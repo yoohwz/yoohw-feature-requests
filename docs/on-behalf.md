@@ -39,3 +39,36 @@ fresh independent final security/persistence review. No merge, release, publish
 or production deployment.
 
 The insert-only option lock has no expiry or automatic stealing. A process crash can leave that one confirmation blocked; a new explicit confirmation uses another key. Normal retries after a completed response use the persisted ID. This deliberately fails closed instead of risking two concurrent writers. The adapter must hold its own confirmation lock until source metadata and notification finalization complete.
+
+## Author receipt addition
+
+Human now requests an immediate owner confirmation, including requests created
+on their behalf. Verified existing `new` mail targets only the configured admin;
+authors currently receive only later moderation/roadmap updates. Add a separate
+`receipt` notification event/config checkbox, default enabled for future
+submissions, independently of admin-new mail. Self-submitted copy confirms
+receipt; manager-created copy explicitly says a moderator created it for the
+owner. Always derive the recipient from persisted post_author, never actor,
+source reply author or form input. Include only request ID/title/moderation and
+the validated private request URL; no body, email/login/actor account or private
+Support source. Shared email shell and palette remain unchanged.
+
+Reuse existing per-type queue, bounded retry, revision/snapshot/owner checks and
+idempotency markers with `_yfr_notice_receipt`. Queue only on the existing
+completed-submission event, after core audit/source readback for deferred
+adapters. No backlog/replay of old requests or mail sent during validation,
+source failure/rollback, plain post insertion or an unfinished adapter save.
+The existing adapter confirmation lock covers both event queues. No new table,
+service, outbox/synchronization engine or separate worker. Transport acceptance
+is not inbox delivery; bounded retries retain the current crash limitations.
+
+Acceptance: self and managed owner receipts; recipient isolation; admin/receipt
+settings independently off/on; duplicate submit and retry isolation; deferred
+source completion/failure; invalid/deleted/reassigned owner, stale snapshot and
+revision cancellation; safe title/URL and no private source/body; settings
+sanitization; same layout/theme; no historical mail. Run both WP/PHP fixture
+matrices, focused mail/runtime/HTTP, staged Plugin Check. Fresh plan challenge
+before code and independent final review before handing the same PR to Human.
+Local Mailpit demos use synthetic marked records with loopback-only transport,
+without disabling persistent mail/network safety guards. No merge/release/publish
+or production deployment.
