@@ -1,0 +1,87 @@
+name: YFR CI
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: yfr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    name: WordPress ${{ matrix.wordpress }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '7.4'
+            wordpress: '6.2'
+          - php: '8.2'
+            wordpress: latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: yfr_wave1_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, mbstring
+          tools: wp-cli
+          coverage: none
+      - name: Syntax and whitespace
+        run: |
+          find . -name '*.php' -print0 | xargs -0 -n1 php -l
+          git diff --check
+      - name: Install isolated WordPress fixture
+        env:
+          WP_VERSION: ${{ matrix.wordpress }}
+        run: |
+          mkdir -p /tmp/yfr-wave1-ci/wordpress
+          wp core download --path=/tmp/yfr-wave1-ci/wordpress --version="$WP_VERSION"
+          wp config create --path=/tmp/yfr-wave1-ci/wordpress --dbname=yfr_wave1_ci --dbuser=root --dbpass=root --dbhost=127.0.0.1 --skip-check
+          wp config set DISABLE_WP_CRON true --raw --path=/tmp/yfr-wave1-ci/wordpress
+          wp core install --path=/tmp/yfr-wave1-ci/wordpress --url=http://127.0.0.1:8791 --title='YFR fixture' --admin_user=yfr_fixture_admin --admin_password='YfrFixture-Only-2026!' --admin_email=yfr-admin@example.test --skip-email
+          mkdir -p /tmp/yfr-wave1-ci/wordpress/wp-content/mu-plugins
+          printf '%s\n' '<?php add_filter("pre_wp_mail", "__return_true");' > /tmp/yfr-wave1-ci/wordpress/wp-content/mu-plugins/no-email.php
+          python3 - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          Path('/tmp/yfr-wave1-ci/fixture.json').write_text(json.dumps({'root':'/tmp/yfr-wave1-ci/wordpress','db':'yfr_wave1_ci','php':shutil.which('php'),'wp':shutil.which('wp')}))
+          PY
+          ln -s "$GITHUB_WORKSPACE" /tmp/yfr-wave1-ci/wordpress/wp-content/plugins/yoohw-feature-requests
+          wp plugin activate yoohw-feature-requests --path=/tmp/yfr-wave1-ci/wordpress
+      - name: Request management and privacy runtime tests
+        run: wp eval-file tests/runtime.php --path=/tmp/yfr-wave1-ci/wordpress
+      - name: HTTP authorization and moderation tests
+        run: |
+          php -S 127.0.0.1:8791 -t /tmp/yfr-wave1-ci/wordpress > /tmp/yfr-http.log 2>&1 &
+          for attempt in $(seq 1 20); do curl -fsS http://127.0.0.1:8791/ >/dev/null && break || sleep 1; done
+          python3 tests/http_checks.py /tmp/yfr-wave1-ci/fixture.json
+  plugin-check:
+    name: Staged Plugin Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Stage product payload
+        run: bash scripts/stage-distribution.sh . "$RUNNER_TEMP/staged/yoohw-feature-requests"
+      - uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
+        with:
+          build-dir: ${{ runner.temp }}/staged/yoohw-feature-requests
+          slug: yoohw-feature-requests
+          strict: false

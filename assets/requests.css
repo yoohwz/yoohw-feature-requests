@@ -1,0 +1,22 @@
+.yfr { --yfr-border: #c3c4c7; --yfr-muted: #50575e; max-width: 54rem; margin: 2rem auto; color: inherit; line-height: 1.6; }
+.yfr *, .yfr *::before, .yfr *::after { box-sizing: border-box; }
+.yfr h2, .yfr h3 { margin: 0 0 1rem; line-height: 1.3; color: inherit; }
+.yfr section, .yfr article { margin-block: 2rem; }
+.yfr form { display: grid; gap: 1.25rem; }
+.yfr label { display: block; font-weight: 600; margin-bottom: .35rem; }
+.yfr input:not([type=hidden]), .yfr select, .yfr textarea { display: block; width: 100%; max-width: 100%; border: 1px solid var(--yfr-border); border-radius: .3rem; padding: .7rem; font: inherit; color: #1d2327; background: #fff; }
+.yfr textarea { min-height: 12rem; resize: vertical; }
+.yfr button { width: fit-content; border: 2px solid transparent; border-radius: .3rem; padding: .7rem 1.1rem; font: inherit; font-weight: 600; background: #135e96; color: #fff; cursor: pointer; }
+.yfr a { text-decoration: underline; text-underline-offset: .16em; overflow-wrap: anywhere; }
+.yfr :is(a, button, input, select, textarea):focus-visible { outline: 3px solid #2271b1; outline-offset: 3px; }
+.yfr .yfr-note, .yfr small { color: var(--yfr-muted); }
+.yfr .yfr-notice { border: 1px solid var(--yfr-border); border-left: 4px solid #135e96; padding: 1rem; margin-block: 1rem; }
+.yfr .yfr-error { border-left-color: #b32d2e; }
+.yfr .yfr-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.yfr .yfr-list li, .yfr .yfr-detail { border: 1px solid var(--yfr-border); border-radius: .4rem; padding: 1.25rem; overflow-wrap: anywhere; }
+.yfr .yfr-list h3 { font-size: 1.15em; margin-bottom: .4rem; }
+.yfr .yfr-meta { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .9em; margin-bottom: .75rem; }
+.yfr .yfr-pagination { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1.5rem; }
+.yfr .yfr-content { overflow-wrap: anywhere; }
+.yfr .yfr-content > :last-child { margin-bottom: 0; }
+@media (max-width: 600px) { .yfr { margin: 1rem auto; } .yfr .yfr-list li, .yfr .yfr-detail { padding: 1rem; } .yfr button { width: 100%; } }
