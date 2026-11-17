@@ -37,3 +37,5 @@ detail hook access, escaped audit and no source disclosure. Existing runtime,
 HTTP, notification, staging and Plugin Check remain required. Main performs a
 fresh independent final security/persistence review. No merge, release, publish
 or production deployment.
+
+The insert-only option lock has no expiry or automatic stealing. A process crash can leave that one confirmation blocked; a new explicit confirmation uses another key. Normal retries after a completed response use the persisted ID. This deliberately fails closed instead of risking two concurrent writers. The adapter must hold its own confirmation lock until source metadata and notification finalization complete.

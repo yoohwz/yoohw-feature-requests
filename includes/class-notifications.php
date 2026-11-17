@@ -153,6 +153,10 @@ final class Notifications {
 			}
 		}
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
+		$creator = (int) get_post_meta( $id, Requests::META_CREATED_BY, true );
+		if ( $creator && $creator !== (int) $job['author'] ) {
+			$details[] = __( 'Created on your behalf by a request moderator.', 'yoohw-feature-requests' );
+		}
 		$message = self::email_content( $id, $job, $type, $intro, $details, $url );
 		$previous = $job;
 		++$job['attempts'];
