@@ -199,13 +199,16 @@ $_POST = array();
 
 // Privacy export and destructive erasure use >2 batches without skipping records.
 $privacy_ids = array();
-$statuses = array( 'pending', 'publish', 'draft', 'trash', 'private' );
+$statuses = array( 'pending', 'publish', 'draft', 'trash', 'private', 'future', 'auto-draft' );
 for ( $i = 0; $i < 45; ++$i ) {
-	$id = wp_insert_post( array( 'post_type' => Requests::TYPE, 'post_status' => $statuses[ $i % count( $statuses ) ], 'post_author' => $privacy, 'post_title' => 'Privacy request ' . $suffix . ' ' . $i, 'post_content' => 'Synthetic privacy export and erasure content.', 'meta_input' => array( Requests::META_KIND => 'feature', Requests::META_STATE => 'under_review', Requests::META_URL => 'https://example.test/privacy' ) ) );
+	$status = $statuses[ $i % count( $statuses ) ];
+	$id = wp_insert_post( array( 'post_type' => Requests::TYPE, 'post_status' => $status, 'post_date' => 'future' === $status ? '2099-01-01 12:00:00' : current_time( 'mysql' ), 'post_date_gmt' => 'future' === $status ? '2099-01-01 12:00:00' : current_time( 'mysql', true ), 'post_author' => $privacy, 'post_title' => 'Privacy request ' . $suffix . ' ' . $i, 'post_content' => 'Synthetic privacy export and erasure content.', 'meta_input' => array( Requests::META_KIND => 'feature', Requests::META_STATE => 'under_review', Requests::META_URL => 'https://example.test/privacy' ) ) );
 	$privacy_ids[] = $id;
 	wp_set_object_terms( $id, array( (int) $term['term_id'] ), Requests::CATEGORY );
 	wp_set_object_terms( $id, array( (int) $product['term_id'] ), Requests::PRODUCT );
 }
+$assert( 'future' === get_post_status( $privacy_ids[5] ) && 'auto-draft' === get_post_status( $privacy_ids[6] ), 'Privacy fixtures include actual scheduled and native auto-draft requests.' );
+$assert( $error_is( Requests::validate( array_merge( $input, array( 'reference_url' => array( 'invalid' ) ) ) ), 'invalid_url' ), 'Non-scalar optional reference URLs are rejected rather than treated as empty.' );
 wp_set_object_terms( $other_request, array( (int) $term['term_id'] ), Requests::CATEGORY );
 $privacy_revision = wp_insert_post( array( 'post_type' => 'revision', 'post_status' => 'inherit', 'post_parent' => $privacy_ids[0], 'post_author' => $privacy, 'post_title' => 'Private old revision ' . $suffix, 'post_content' => 'Old sensitive synthetic content.' ) );
 $privacy_email = get_userdata( $privacy )->user_email;

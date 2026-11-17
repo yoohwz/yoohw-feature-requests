@@ -14,7 +14,7 @@ final class Requests {
 	const MANAGE     = 'yfr_manage_requests';
 	const CATEGORY   = 'yfr_category';
 	const PRODUCT    = 'yfr_product';
-	const STATUSES   = array( 'pending', 'publish', 'draft', 'trash', 'private' );
+	const STATUSES   = array( 'pending', 'publish', 'draft', 'trash', 'private', 'future' );
 	const META_KIND  = '_yfr_kind';
 	const META_STATE = '_yfr_state';
 	const META_URL   = '_yfr_reference_url';
@@ -137,6 +137,12 @@ final class Requests {
 	}
 
 	public static function validate( array $input ) {
+		foreach ( array( 'title', 'description', 'kind', 'reference_url' ) as $key ) {
+			if ( isset( $input[ $key ] ) && ! is_string( $input[ $key ] ) ) {
+				$code = 'kind' === $key ? 'invalid_kind' : ( 'reference_url' === $key ? 'invalid_url' : 'invalid_content' );
+				return new \WP_Error( $code, __( 'Use text values for the request fields.', 'yoohw-feature-requests' ) );
+			}
+		}
 		$title = sanitize_text_field( self::text( $input['title'] ?? '' ) );
 		$raw   = self::text( $input['description'] ?? '' );
 		$kind  = self::text( $input['kind'] ?? '' );
@@ -221,6 +227,7 @@ final class Requests {
 			'draft'   => __( 'Not approved', 'yoohw-feature-requests' ),
 			'trash'   => __( 'Removed', 'yoohw-feature-requests' ),
 			'private' => __( 'Private', 'yoohw-feature-requests' ),
+			'future'  => __( 'Scheduled', 'yoohw-feature-requests' ),
 		);
 		return $labels[ $post->post_status ] ?? __( 'Not available', 'yoohw-feature-requests' );
 	}

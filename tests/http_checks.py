@@ -124,7 +124,7 @@ for role in ('other', 'editor'):
     _, _, body = request(client, page + '&yfr_request=' + str(post_id))
     check(payload['title'] not in body and 'Request unavailable' in body, f'{role} detail isolated')
     code, _, body = request(client, base + f'/wp-admin/post.php?post={post_id}&action=edit')
-    check(code == 403 and payload['title'] not in body, f'{role} native editor denied')
+    check(code in (403, 500) and 'not allowed to edit' in body and payload['title'] not in body, f'{role} native editor denied')
 
 # Core preview/search/REST routes must not expose a pending or approved request.
 for status in ('pending', 'publish'):

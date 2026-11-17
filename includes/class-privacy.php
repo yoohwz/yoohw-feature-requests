@@ -32,7 +32,7 @@ final class Privacy {
 
 	private static function query( $email, $page ) {
 		$user = get_user_by( 'email', $email );
-		return $user ? get_posts( array( 'post_type' => Requests::TYPE, 'post_status' => Requests::STATUSES, 'author' => $user->ID, 'numberposts' => 20, 'paged' => max( 1, (int) $page ), 'orderby' => 'ID', 'order' => 'ASC' ) ) : array();
+		return $user ? get_posts( array( 'post_type' => Requests::TYPE, 'post_status' => array_keys( get_post_stati() ), 'author' => $user->ID, 'numberposts' => 20, 'paged' => max( 1, (int) $page ), 'orderby' => 'ID', 'order' => 'ASC' ) ) : array();
 	}
 
 	public static function export( $email, $page = 1 ) {
