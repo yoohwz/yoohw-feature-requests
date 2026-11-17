@@ -145,10 +145,11 @@ code, _, body = request(admin, base + f'/wp-admin/post.php?post={post_id}&action
 check(code == 200 and 'yfr_details_nonce' in body, 'moderator editor available')
 native_nonce = re.search(r'name="_wpnonce" value="([^"]+)"', body).group(1)
 details_nonce = re.search(r'name="yfr_details_nonce" value="([^"]+)"', body).group(1)
+native_author = re.search(r'name="post_author" value="([^"]+)"', body).group(1)
 code, _, _ = request(admin, base + '/wp-admin/post.php', {
     'action': 'editpost', 'post_ID': post_id, 'post_type': 'yfr_request',
     '_wpnonce': native_nonce, 'yfr_details_nonce': details_nonce,
-    'post_title': payload['title'], 'content': record['content'],
+    'post_title': payload['title'], 'content': record['content'], 'post_author': native_author,
     'post_status': 'publish', 'publish': 'Update', 'yfr_kind': 'integration',
     'yfr_state': 'planned', 'yfr_reference_url': 'https://example.test/reference',
 })

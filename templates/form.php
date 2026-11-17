@@ -18,15 +18,15 @@ defined( 'ABSPATH' ) || exit;
 		<input type="hidden" name="yfr_page" value="<?php echo esc_attr( get_queried_object_id() ); ?>">
 		<?php wp_nonce_field( 'yfr_submit', 'yfr_nonce' ); ?>
 		<div><label for="yfr-kind"><?php esc_html_e( 'Request type', 'yoohw-feature-requests' ); ?></label>
-			<select id="yfr-kind" name="kind" required><?php foreach ( Requests::kinds() as $value => $label ) : ?><option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select>
+			<select id="yfr-kind" name="kind" required><?php foreach ( Requests::kinds() as $yfr_value => $yfr_label ) : ?><option value="<?php echo esc_attr( $yfr_value ); ?>"><?php echo esc_html( $yfr_label ); ?></option><?php endforeach; ?></select>
 		</div>
 		<div><label for="yfr-title"><?php esc_html_e( 'Title', 'yoohw-feature-requests' ); ?></label><input id="yfr-title" name="title" type="text" required minlength="3" maxlength="180"></div>
 		<div><label for="yfr-description"><?php esc_html_e( 'Description', 'yoohw-feature-requests' ); ?></label><textarea id="yfr-description" name="description" required minlength="10" maxlength="10000" aria-describedby="yfr-description-help"></textarea><small id="yfr-description-help"><?php esc_html_e( 'Describe the problem, who needs it and the outcome you want. Use 10–10,000 characters.', 'yoohw-feature-requests' ); ?></small></div>
-		<?php foreach ( array( 'category' => Requests::CATEGORY, 'product' => Requests::PRODUCT ) as $key => $taxonomy ) : ?>
-			<?php $terms = get_terms( array( 'taxonomy' => $taxonomy, 'hide_empty' => false ) ); ?>
-			<?php if ( ! is_wp_error( $terms ) && $terms ) : ?>
-				<div><label for="yfr-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( 'category' === $key ? __( 'Category (optional)', 'yoohw-feature-requests' ) : __( 'Related product (optional)', 'yoohw-feature-requests' ) ); ?></label>
-					<select id="yfr-<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>"><option value=""><?php esc_html_e( 'None / not sure', 'yoohw-feature-requests' ); ?></option><?php foreach ( $terms as $term ) : ?><option value="<?php echo esc_attr( $term->term_id ); ?>"><?php echo esc_html( $term->name ); ?></option><?php endforeach; ?></select>
+		<?php foreach ( array( 'category' => Requests::CATEGORY, 'product' => Requests::PRODUCT ) as $yfr_key => $yfr_taxonomy ) : ?>
+			<?php $yfr_terms = get_terms( array( 'taxonomy' => $yfr_taxonomy, 'hide_empty' => false ) ); ?>
+			<?php if ( ! is_wp_error( $yfr_terms ) && $yfr_terms ) : ?>
+				<div><label for="yfr-<?php echo esc_attr( $yfr_key ); ?>"><?php echo esc_html( 'category' === $yfr_key ? __( 'Category (optional)', 'yoohw-feature-requests' ) : __( 'Related product (optional)', 'yoohw-feature-requests' ) ); ?></label>
+					<select id="yfr-<?php echo esc_attr( $yfr_key ); ?>" name="<?php echo esc_attr( $yfr_key ); ?>"><option value=""><?php esc_html_e( 'None / not sure', 'yoohw-feature-requests' ); ?></option><?php foreach ( $yfr_terms as $yfr_term ) : ?><option value="<?php echo esc_attr( $yfr_term->term_id ); ?>"><?php echo esc_html( $yfr_term->name ); ?></option><?php endforeach; ?></select>
 				</div>
 			<?php endif; ?>
 		<?php endforeach; ?>

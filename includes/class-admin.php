@@ -54,9 +54,9 @@ final class Admin {
 		if ( ! isset( $_POST['yfr_details_nonce'] ) || ! is_string( $_POST['yfr_details_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['yfr_details_nonce'] ) ), 'yfr_details_' . $post_id ) ) {
 			return;
 		}
-		$kind  = Requests::text( isset( $_POST['yfr_kind'] ) ? wp_unslash( $_POST['yfr_kind'] ) : '' );
-		$state = Requests::text( isset( $_POST['yfr_state'] ) ? wp_unslash( $_POST['yfr_state'] ) : '' );
-		$url   = isset( $_POST['yfr_reference_url'] ) ? wp_unslash( $_POST['yfr_reference_url'] ) : '';
+		$kind  = sanitize_text_field( isset( $_POST['yfr_kind'] ) ? wp_unslash( $_POST['yfr_kind'] ) : '' );
+		$state = sanitize_text_field( isset( $_POST['yfr_state'] ) ? wp_unslash( $_POST['yfr_state'] ) : '' );
+		$url   = isset( $_POST['yfr_reference_url'] ) ? wp_unslash( $_POST['yfr_reference_url'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Requests::validate rejects unsafe schemes and sanitizes accepted URLs before persistence.
 		$data  = Requests::validate( array( 'title' => 'Request details', 'description' => 'Request details validation.', 'kind' => $kind, 'reference_url' => $url ) );
 		if ( is_wp_error( $data ) || ! isset( Requests::states()[ $state ] ) ) {
 			set_transient( 'yfr_admin_error_' . get_current_user_id(), 1, MINUTE_IN_SECONDS );

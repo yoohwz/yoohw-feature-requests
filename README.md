@@ -12,11 +12,11 @@ See [readme.txt](readme.txt) for privacy, retention and installation details, an
 
 ## Validation
 
-`tests/runtime.php` and `tests/http.py` run only against a marked disposable WordPress fixture with a dedicated `yfr_wave1_*` database. They must never run against a customer site. Create `fixture.json` beside the WordPress root with `root` and `db` matching the isolated install. Outgoing mail must be disabled.
+`tests/runtime.php` and `tests/http_checks.py` run only against a marked disposable WordPress fixture with a dedicated `yfr_wave1_*` database. They must never run against a customer site. Create `fixture.json` beside the WordPress root with `root` and `db` matching the isolated install. Outgoing mail must be disabled.
 
 ```sh
 wp --path=/tmp/yfr-wave1-example/wordpress eval-file tests/runtime.php
-python3 tests/http.py /tmp/yfr-wave1-example/fixture.json
+python3 tests/http_checks.py /tmp/yfr-wave1-example/fixture.json
 bash scripts/stage-distribution.sh . /tmp/yfr-staged/yoohw-feature-requests
 ```
 

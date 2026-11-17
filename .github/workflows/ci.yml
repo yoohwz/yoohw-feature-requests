@@ -69,7 +69,7 @@ jobs:
         run: |
           php -S 127.0.0.1:8791 -t /tmp/yfr-wave1-ci/wordpress > /tmp/yfr-http.log 2>&1 &
           for attempt in $(seq 1 20); do curl -fsS http://127.0.0.1:8791/ >/dev/null && break || sleep 1; done
-          python3 tests/http.py /tmp/yfr-wave1-ci/fixture.json
+          python3 tests/http_checks.py /tmp/yfr-wave1-ci/fixture.json
   plugin-check:
     name: Staged Plugin Check
     runs-on: ubuntu-latest

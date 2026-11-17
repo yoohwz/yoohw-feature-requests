@@ -26,7 +26,7 @@ final class Frontend {
 	public static function no_cache() {
 		if ( self::is_page() ) {
 			if ( ! defined( 'DONOTCACHEPAGE' ) ) {
-				define( 'DONOTCACHEPAGE', true );
+				define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Shared WordPress cache-plugin convention.
 			}
 			nocache_headers();
 		}
@@ -39,7 +39,8 @@ final class Frontend {
 	}
 
 	public static function handle_submit() {
-		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) && is_string( $_SERVER['REQUEST_METHOD'] ) ? sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+		if ( 'post' !== $method ) {
 			wp_die( esc_html__( 'Use the request form to submit a request.', 'yoohw-feature-requests' ), '', array( 'response' => 405 ) );
 		}
 		if ( ! is_user_logged_in() ) {
@@ -56,7 +57,7 @@ final class Frontend {
 			if ( isset( $_POST[ $key ] ) && ! is_string( $_POST[ $key ] ) ) {
 				wp_die( esc_html__( 'Invalid form data.', 'yoohw-feature-requests' ), '', array( 'response' => 400 ) );
 			}
-			$input[ $key ] = isset( $_POST[ $key ] ) ? wp_unslash( $_POST[ $key ] ) : '';
+			$input[ $key ] = isset( $_POST[ $key ] ) ? wp_unslash( $_POST[ $key ] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Requests::validate validates and sanitizes this fixed field allowlist before persistence.
 		}
 		$result = Requests::submit( $input );
 		$url    = get_permalink( $page );
