@@ -66,7 +66,21 @@ final class Privacy {
 		$removed  = false;
 		$retained = false;
 		foreach ( $posts as $post ) {
-			if ( wp_delete_post( $post->ID, true ) ) {
+			// Core parent deletion ignores revision failures. Remove and verify
+			// children first so a retained revision keeps an owner-scoped retry path.
+			$revision_args = array( 'check_enabled' => false, 'fields' => 'ids' );
+			foreach ( wp_get_post_revisions( $post, $revision_args ) as $revision_id ) {
+				wp_delete_post_revision( $revision_id );
+				if ( ! get_post( $revision_id ) ) {
+					$removed = true;
+				}
+			}
+			if ( wp_get_post_revisions( $post, $revision_args ) ) {
+				$retained = true;
+				continue;
+			}
+			wp_delete_post( $post->ID, true );
+			if ( ! get_post( $post->ID ) ) {
 				$removed = true;
 			} else {
 				$retained = true;

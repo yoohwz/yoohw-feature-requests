@@ -245,6 +245,26 @@ $assert( ! get_post_meta( $privacy_ids[0], Requests::META_URL, true ) && ! get_t
 $empty_erase = Privacy::erase( $privacy_email, 4 );
 $assert( $empty_erase['done'] && ! $empty_erase['items_removed'] && ! $empty_erase['items_retained'], 'Repeated erasure is complete and harmless.' );
 
+// A vetoed child revision must leave its parent discoverable for privacy retry.
+$retained_request = wp_insert_post( array( 'post_type' => Requests::TYPE, 'post_status' => 'pending', 'post_author' => $privacy, 'post_title' => 'Retained privacy parent ' . $suffix, 'post_content' => 'Synthetic data whose old revision cannot yet be erased.' ) );
+$retained_revision = wp_insert_post( array( 'post_type' => 'revision', 'post_status' => 'inherit', 'post_parent' => $retained_request, 'post_author' => $privacy, 'post_name' => $retained_request . '-autosave-v1', 'post_title' => 'Retained synthetic revision', 'post_content' => 'Old private synthetic autosave content.' ) );
+$removed_revision = wp_insert_post( array( 'post_type' => 'revision', 'post_status' => 'inherit', 'post_parent' => $retained_request, 'post_author' => $admin, 'post_title' => 'Moderator synthetic revision', 'post_content' => 'A moderator revision of the same private request.' ) );
+$veto_revision = function ( $delete, $post ) use ( $retained_revision ) {
+	return (int) $post->ID === (int) $retained_revision ? false : $delete;
+};
+$disable_revisions = function () { return 0; };
+add_filter( 'pre_delete_post', $veto_revision, 10, 2 );
+add_filter( 'wp_revisions_to_keep', $disable_revisions );
+$blocked_erase = Privacy::erase( $privacy_email );
+$assert( $blocked_erase['items_removed'] && $blocked_erase['items_retained'] && $blocked_erase['messages'] && $blocked_erase['done'], 'Partial revision erasure reports both removed and retained data, with a reason and a bounded completion.' );
+$assert( get_post( $retained_request ) && get_post( $retained_revision ), 'A vetoed autosave retains its parent for retry even when new revisions are disabled.' );
+$assert( ! get_post( $removed_revision ), 'A deletable moderator revision is removed even if another child is retained.' );
+remove_filter( 'pre_delete_post', $veto_revision, 10 );
+$retry_erase = Privacy::erase( $privacy_email );
+remove_filter( 'wp_revisions_to_keep', $disable_revisions );
+$assert( $retry_erase['items_removed'] && ! $retry_erase['items_retained'] && ! get_post( $retained_request ) && ! get_post( $retained_revision ), 'Retry deletes the retained request and autosave after the veto is removed.' );
+$assert( get_post( $other_request ) && term_exists( (int) $term['term_id'], Requests::CATEGORY ), 'Revision failure and retry preserve unrelated requests and shared terms.' );
+
 // Uninstall is evaluated in place; do not call wp plugin delete on a source symlink.
 wp_set_current_user( $admin );
 $before_uninstall = $meta_values( $request );
