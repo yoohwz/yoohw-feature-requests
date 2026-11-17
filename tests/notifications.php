@@ -162,6 +162,6 @@ $check( false !== strpos( $mail[3]['subject'], 'Declined' ) && false !== strpos(
 $review( $copy, 'draft', 'declined' );
 $check( false !== strpos( $mail[4]['subject'], 'was not approved' ) && false === strpos( $mail[4]['message'], 'Roadmap:' ), 'Not-approved copy is distinct from a published roadmap decline' );
 $escaped = $seed(); wp_update_post( array( 'ID' => $escaped, 'post_title' => 'Import & review <img src=x onerror=alert(1)> safely' ) ); $review( $escaped, 'publish', 'planned' ); $rendered = end( $mail );
-$check( false !== strpos( $rendered['message'], '&amp;' ) && false === strpos( $rendered['message'], '<img' ) && false === strpos( $rendered['message'], 'onerror=' ), 'Request-card title escapes text and cannot introduce HTML or remote images' );
+$check( false === strpos( $rendered['message'], 'Import & review' ) && false !== strpos( wp_specialchars_decode( $rendered['message'], ENT_QUOTES ), 'Import & review' ) && false === strpos( $rendered['message'], '<img' ) && false === strpos( $rendered['message'], 'onerror=' ), 'Request-card title escapes text and cannot introduce HTML or remote images' );
 remove_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX );
 echo 'Notification assertions passed: ' . $checks . "\n";
