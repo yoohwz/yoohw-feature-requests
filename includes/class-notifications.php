@@ -5,7 +5,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class Notifications {
 	const OPTION = 'yfr_notifications';
-	const RETRY = 'yfr_notification_retry';
+	const RETRY = 'yoohw_feature_requests_notification_retry';
 	private static $before = array();
 	private static $deferred = array();
 	private static $cancelled = array();
@@ -13,12 +13,13 @@ final class Notifications {
 	public static function boot() {
 		add_action( 'pre_post_update', array( __CLASS__, 'capture' ) );
 		add_action( 'wp_after_insert_post', array( __CLASS__, 'after_insert' ), 100, 3 );
-		add_action( 'yfr_request_submitted', array( __CLASS__, 'submitted' ) );
-		add_action( 'yfr_before_request_update', array( __CLASS__, 'begin' ) );
-		add_action( 'yfr_request_updated', array( __CLASS__, 'complete' ) );
+		add_action( 'yoohw_feature_requests_submitted', array( __CLASS__, 'submitted' ) );
+		add_action( 'yoohw_feature_requests_before_update', array( __CLASS__, 'begin' ) );
+		add_action( 'yoohw_feature_requests_updated', array( __CLASS__, 'complete' ) );
 		add_action( self::RETRY, array( __CLASS__, 'deliver' ), 10, 3 );
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
 		add_action( 'update_option_' . self::OPTION, array( __CLASS__, 'settings_changed' ) );
+		add_action( 'add_option_' . self::OPTION, array( __CLASS__, 'settings_changed' ) );
 		add_action( 'admin_init', array( __CLASS__, 'settings' ) );
 	}
 
@@ -114,10 +115,11 @@ final class Notifications {
 		$enabled = 'new' === $type ? $config['new'] : ( ( empty( $job['events']['moderation'] ) || $config['moderation'] ) && ( empty( $job['events']['roadmap'] ) || $config['roadmap'] ) );
 		$recipient = 'new' === $type ? ( $config['admin_email'] ?: get_option( 'admin_email' ) ) : ( $author ? $author->user_email : '' );
 		if ( ( $job['revision'] ?? '' ) !== get_option( 'yfr_notification_revision', '' ) || ! $enabled || ! $author || (int) $post->post_author !== $job['author'] || ! is_string( $recipient ) || ! is_email( $recipient ) || preg_match( '/[\r\n]/', $recipient ) || self::snapshot( $id ) !== $job['after'] ) {
-			$job['result'] = 'cancelled'; update_post_meta( $id, $key, $job ); wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); return;
+			$previous = $job; $job['result'] = 'cancelled'; update_post_meta( $id, $key, $job, $previous ); wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); return;
 		}
 		$subject = 'new' === $type ? __( 'New feature request awaiting review', 'yoohw-feature-requests' ) : __( 'Your feature request was updated', 'yoohw-feature-requests' );
-		$lines = array( sprintf( __( 'Request #%d: %s', 'yoohw-feature-requests' ), $id, $job['title'] ) );
+		/* translators: 1: Request ID, 2: Request title. */
+		$lines = array( sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $job['title'] ) );
 		if ( 'new' === $type ) { $lines[] = __( 'A new request is awaiting moderation.', 'yoohw-feature-requests' ); }
 		if ( ! empty( $job['events']['moderation'] ) ) {
 			$lines[] = __( 'Moderation:', 'yoohw-feature-requests' ) . ' ' . Requests::moderation_label( $post );
@@ -126,14 +128,16 @@ final class Notifications {
 		$lines[] = __( 'Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' );
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
 		if ( $url ) { $lines[] = __( 'View request:', 'yoohw-feature-requests' ) . ' ' . $url; }
+		$previous = $job;
 		++$job['attempts'];
 		// Persist attempt before transport; no exactly-once delivery guarantee is possible.
-		update_post_meta( $id, $key, $job );
+		if ( ! update_post_meta( $id, $key, $job, $previous ) ) { return; }
+		$claimed = $job;
 		$accepted = wp_mail( $recipient, $subject, implode( "\n\n", $lines ) );
 		$current = get_post_meta( $id, $key, true );
 		if ( ! is_array( $current ) || $current['token'] !== $token ) { return; }
 		$job['result'] = $accepted ? 'accepted' : ( $job['attempts'] >= 3 ? 'failed' : 'pending' );
-		update_post_meta( $id, $key, $job );
+		update_post_meta( $id, $key, $job, $claimed );
 		if ( 'pending' !== $job['result'] ) { wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); }
 		if ( 'pending' === $job['result'] && ! wp_next_scheduled( self::RETRY, array( $id, $type, $token ) ) ) {
 			wp_schedule_single_event( time() + 5 * MINUTE_IN_SECONDS, self::RETRY, array( $id, $type, $token ) );
@@ -143,7 +147,7 @@ final class Notifications {
 	public static function request_url( $id ) {
 		$page = get_post( absint( self::config()['page_id'] ) );
 		$url = $page && 'page' === $page->post_type && 'publish' === $page->post_status && ! $page->post_password && has_shortcode( $page->post_content, 'yfr_requests' ) ? add_query_arg( 'yfr_request', $id, get_permalink( $page ) ) : '';
-		$url = apply_filters( 'yfr_notification_request_url', $url, $id );
+		$url = apply_filters( 'yoohw_feature_requests_notification_url', $url, $id );
 		$parts = is_string( $url ) ? wp_parse_url( $url ) : false;
 		$home = wp_parse_url( home_url() );
 		return is_array( $parts ) && ! empty( $parts['host'] ) && strtolower( $parts['host'] ) === strtolower( $home['host'] ) && in_array( $parts['scheme'] ?? '', array( 'http', 'https' ), true ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] ) ? esc_url_raw( $url ) : '';
@@ -191,7 +195,8 @@ final class Notifications {
 		<?php endforeach; ?>
 		<p><label for="yfr-email"><?php esc_html_e( 'Administrator recipient (blank uses site administrator email)', 'yoohw-feature-requests' ); ?></label><br><input id="yfr-email" type="email" class="regular-text" name="yfr_notifications[admin_email]" value="<?php echo esc_attr( $config['admin_email'] ); ?>"></p>
 		<p><label for="yfr-email-page"><?php esc_html_e( 'Request page for author email links', 'yoohw-feature-requests' ); ?></label><br>
-		<?php wp_dropdown_pages( array( 'name' => 'yfr_notifications[page_id]', 'id' => 'yfr-email-page', 'selected' => $config['page_id'], 'show_option_none' => __( 'No author link', 'yoohw-feature-requests' ), 'option_none_value' => '0' ) ); ?></p>
+		<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core wp_dropdown_pages escapes the generated select and its options.
+		wp_dropdown_pages( array( 'name' => 'yfr_notifications[page_id]', 'id' => 'yfr-email-page', 'selected' => $config['page_id'], 'show_option_none' => __( 'No author link', 'yoohw-feature-requests' ), 'option_none_value' => '0' ) ); ?></p>
 		<p><?php esc_html_e( 'Select a published page containing [yfr_requests]. Messages contain title/status only. Existing requests are not emailed retroactively. Delivery uses your WordPress mail configuration; accepted mail is not confirmation of inbox delivery.', 'yoohw-feature-requests' ); ?></p>
 		<?php submit_button(); ?></form></div>
 		<?php

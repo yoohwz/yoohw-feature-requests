@@ -220,7 +220,7 @@ final class Requests {
 				}
 			}
 		}
-		do_action( 'yfr_request_submitted', $id );
+		do_action( 'yoohw_feature_requests_submitted', $id );
 		set_transient( 'yfr_submit_' . $user_id, 1, MINUTE_IN_SECONDS );
 		return $id;
 	}

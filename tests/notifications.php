@@ -22,14 +22,14 @@ $mail = array(); $accept = true;
 $intercept = static function ( $pre, $args ) use ( &$mail, &$accept ) { $mail[] = $args; return $accept; };
 add_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX, 2 );
 $seed = static function ( $status = 'pending', $state = 'under_review' ) use ( $owner ) { return wp_insert_post( array( 'post_type' => Requests::TYPE, 'post_status' => $status, 'post_author' => $owner, 'post_title' => 'Synthetic mail title', 'post_content' => 'PRIVATE BODY MUST NOT BE EMAILED', 'meta_input' => array( Requests::META_STATE => $state, Requests::META_KIND => 'feature', Requests::META_URL => '' ) ) ); };
-$review = static function ( $id, $status, $state ) { do_action( 'yfr_before_request_update', $id ); wp_update_post( array( 'ID' => $id, 'post_status' => $status ) ); update_post_meta( $id, Requests::META_STATE, $state ); do_action( 'yfr_request_updated', $id ); };
+$review = static function ( $id, $status, $state ) { do_action( 'yoohw_feature_requests_before_update', $id ); wp_update_post( array( 'ID' => $id, 'post_status' => $status ) ); update_post_meta( $id, Requests::META_STATE, $state ); do_action( 'yoohw_feature_requests_updated', $id ); };
 $job = static function ( $id, $type = 'update' ) { return get_post_meta( $id, '_yfr_notice_' . $type, true ); };
 
 wp_set_current_user( $owner );
 $id = Requests::submit( array( 'title' => 'Synthetic submitted idea', 'description' => 'PRIVATE BODY MUST NOT BE EMAILED', 'kind' => 'feature' ) );
 $check( is_int( $id ) && 1 === count( $mail ) && 'moderators@example.test' === $mail[0]['to'], 'Completed frontend submission emails only configured moderator' );
 $check( false === strpos( $mail[0]['message'], 'PRIVATE BODY' ) && false === strpos( $mail[0]['message'], 'owner-' ), 'New request email excludes description and account identity' );
-do_action( 'yfr_request_submitted', $id );
+do_action( 'yoohw_feature_requests_submitted', $id );
 $check( 1 === count( $mail ), 'Repeated submission-complete event does not resend' );
 $bad = Requests::submit( array( 'title' => '', 'description' => 'Invalid', 'kind' => 'feature' ) );
 $check( is_wp_error( $bad ) && 1 === count( $mail ), 'Invalid submission produces no message' );
@@ -72,9 +72,9 @@ $_POST['yfr_details_nonce'] = wp_create_nonce( 'yfr_details_' . $native );
 $fail_meta = static function ( $value, $post_id, $key ) use ( $native ) { return $native === $post_id && Requests::META_STATE === $key ? false : $value; };
 add_filter( 'update_post_metadata', $fail_meta, 10, 3 ); wp_update_post( array( 'ID' => $native, 'post_status' => 'draft' ) ); remove_filter( 'update_post_metadata', $fail_meta ); $_POST = array();
 $check( 2 === count( $mail ), 'Native metadata readback failure does not notify success' );
-$partial = $seed(); do_action( 'yfr_before_request_update', $partial ); wp_update_post( array( 'ID' => $partial, 'post_status' => 'publish' ) );
+$partial = $seed(); do_action( 'yoohw_feature_requests_before_update', $partial ); wp_update_post( array( 'ID' => $partial, 'post_status' => 'publish' ) );
 $check( 2 === count( $mail ), 'Uncompleted multi-step adapter operation suppresses native inner save' );
-N::cancel( $partial ); do_action( 'yfr_request_updated', $partial );
+N::cancel( $partial ); do_action( 'yoohw_feature_requests_updated', $partial );
 $check( 2 === count( $mail ), 'Cancelled operation does not flush at completion' );
 
 $mail = array(); $retry = $seed(); $accept = false; $review( $retry, 'publish', 'planned' ); $pending = $job( $retry );
@@ -93,7 +93,7 @@ $check( count( $mail ) === $count && 'cancelled' === $job( $changed )['result'],
 $accept = false; $changed = $seed(); $review( $changed, 'publish', 'planned' ); $pending = $job( $changed ); update_post_meta( $changed, Requests::META_STATE, 'declined' ); $accept = true; $count = count( $mail ); N::deliver( $changed, 'update', $pending['token'] );
 $check( count( $mail ) === $count, 'State changed without a completed event invalidates old retry' );
 
-update_option( N::OPTION, array_merge( $config, array( 'new' => 0, 'moderation' => 0, 'roadmap' => 0 ) ) ); $mail = array(); $silent = $seed(); do_action( 'yfr_request_submitted', $silent ); $review( $silent, 'publish', 'planned' );
+update_option( N::OPTION, array_merge( $config, array( 'new' => 0, 'moderation' => 0, 'roadmap' => 0 ) ) ); $mail = array(); $silent = $seed(); do_action( 'yoohw_feature_requests_submitted', $silent ); $review( $silent, 'publish', 'planned' );
 $check( ! $mail, 'All event switches are enforced' ); update_option( N::OPTION, $config ); $review( $silent, 'publish', 'planned' );
 $check( ! $mail, 'Re-enabling does not backfill unchanged existing requests' );
 $unknown = $seed(); wp_update_post( array( 'ID' => $unknown, 'post_author' => 2147483647 ) ); $review( $unknown, 'publish', 'planned' );
@@ -107,8 +107,8 @@ $check( $clean === N::config(), 'Settings reject header-injection administrator 
 $clean = N::sanitize( array_merge( $config, array( 'new' => array( 1 ), 'page_id' => array( $page ) ) ) );
 $check( 0 === $clean['new'] && 0 === $clean['page_id'], 'Settings reject array checkbox and page values safely' );
 $check( '' !== N::request_url( $id ), 'Published shortcode Page yields author detail URL' );
-$bad_url = static function () { return 'https://outside.example.test/?yfr_request=1'; }; add_filter( 'yfr_notification_request_url', $bad_url );
-$check( '' === N::request_url( $id ), 'External notification-link override is rejected' ); remove_filter( 'yfr_notification_request_url', $bad_url );
+$bad_url = static function () { return 'https://outside.example.test/?yfr_request=1'; }; add_filter( 'yoohw_feature_requests_notification_url', $bad_url );
+$check( '' === N::request_url( $id ), 'External notification-link override is rejected' ); remove_filter( 'yoohw_feature_requests_notification_url', $bad_url );
 wp_update_post( array( 'ID' => $page, 'post_status' => 'draft' ) );
 $check( '' === N::request_url( $id ), 'Unpublished Page does not become an email link' );
 wp_set_current_user( $other ); $check( ! Requests::can_view( $id ), 'Email links do not grant unrelated user access' );
@@ -128,5 +128,24 @@ add_filter( 'add_post_metadata', $fail_insert_meta, 10, 3 );
 $bad = Requests::submit( array( 'title' => 'Synthetic failed metadata', 'description' => 'A valid suggestion with failed metadata.', 'kind' => 'feature' ) );
 remove_filter( 'add_post_metadata', $fail_insert_meta );
 $check( is_wp_error( $bad ) && ! $mail, 'Failed initial metadata readback produces no submission email' );
+
+wp_set_current_user( $admin ); delete_option( N::OPTION ); $accept = false; $fresh = $seed(); do_action( 'yoohw_feature_requests_submitted', $fresh ); $pending = $job( $fresh, 'new' ); $count = count( $mail );
+update_option( N::OPTION, $config ); $accept = true; N::deliver( $fresh, 'new', $pending['token'] );
+$check( count( $mail ) === $count && 'cancelled' === $job( $fresh, 'new' )['result'], 'First settings save invalidates default-configuration retry' );
+foreach ( array( 'claim', 'result' ) as $phase ) {
+ $accept = false; $race = $seed(); $review( $race, 'publish', 'planned' ); $pending = $job( $race ); $count = count( $mail ); $replacement = $pending; $replacement['token'] = wp_generate_uuid4(); $replacement['attempts'] = 0;
+ $inject = null;
+ $inject = static function ( $pre, $post_id, $key, $value ) use ( $race, $phase, $replacement, &$inject ) {
+  if ( $race === $post_id && '_yfr_notice_update' === $key && ( 'claim' === $phase || 'accepted' === ( $value['result'] ?? '' ) ) ) {
+   remove_filter( 'update_post_metadata', $inject, 10 ); update_post_meta( $post_id, $key, $replacement );
+  }
+  return $pre;
+ };
+ add_filter( 'update_post_metadata', $inject, 10, 4 ); $accept = true; N::deliver( $race, 'update', $pending['token'] ); remove_filter( 'update_post_metadata', $inject, 10 );
+ $check( $job( $race )['token'] === $replacement['token'], 'Old worker cannot overwrite replacement event during ' . $phase );
+ if ( 'claim' === $phase ) { $check( count( $mail ) === $count, 'Failed compare-and-swap attempt claim never calls transport' ); }
+ N::deliver( $race, 'update', $replacement['token'] );
+ $check( 'accepted' === $job( $race )['result'], 'Replacement event can still deliver after ' . $phase . ' race' );
+}
 remove_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX );
 echo 'Notification assertions passed: ' . $checks . "\n";

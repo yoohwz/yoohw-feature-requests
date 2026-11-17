@@ -67,7 +67,7 @@ final class Admin {
 		update_post_meta( $post_id, Requests::META_KIND, $kind );
 		update_post_meta( $post_id, Requests::META_STATE, $state );
 		update_post_meta( $post_id, Requests::META_URL, $data['url'] );
-		if ( get_post_meta( $post_id, Requests::META_KIND, true ) !== $kind || get_post_meta( $post_id, Requests::META_STATE, true ) !== $state || get_post_meta( $post_id, Requests::META_URL, true ) !== $data['url'] ) { Notifications::cancel( $post_id ); }
+		if ( get_post_meta( $post_id, Requests::META_KIND, true ) !== $kind || get_post_meta( $post_id, Requests::META_STATE, true ) !== $state || get_post_meta( $post_id, Requests::META_URL, true ) !== $data['url'] ) { Notifications::cancel( $post_id ); set_transient( 'yfr_admin_error_' . get_current_user_id(), 1, MINUTE_IN_SECONDS ); }
 	}
 
 	public static function notice() {
