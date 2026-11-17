@@ -117,17 +117,49 @@ final class Notifications {
 		if ( ( $job['revision'] ?? '' ) !== get_option( 'yfr_notification_revision', '' ) || ! $enabled || ! $author || (int) $post->post_author !== $job['author'] || ! is_string( $recipient ) || ! is_email( $recipient ) || preg_match( '/[\r\n]/', $recipient ) || self::snapshot( $id ) !== $job['after'] ) {
 			$previous = $job; $job['result'] = 'cancelled'; update_post_meta( $id, $key, $job, $previous ); wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); return;
 		}
-		$subject = 'new' === $type ? __( 'New feature request awaiting review', 'yoohw-feature-requests' ) : __( 'Your feature request was updated', 'yoohw-feature-requests' );
-		/* translators: 1: Request ID, 2: Request title. */
-		$lines = array( sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $job['title'] ) );
-		if ( 'new' === $type ) { $lines[] = __( 'A new request is awaiting moderation.', 'yoohw-feature-requests' ); }
-		if ( ! empty( $job['events']['moderation'] ) ) {
-			$lines[] = __( 'Moderation:', 'yoohw-feature-requests' ) . ' ' . Requests::moderation_label( $post );
+		$status_label = Requests::state_label( $id );
+		if ( 'new' === $type ) {
+			/* translators: %d: Request ID. */
+			$subject = sprintf( __( 'New request #%d needs review', 'yoohw-feature-requests' ), $id );
+			$intro = __( 'A new suggestion has been submitted and is waiting for your review.', 'yoohw-feature-requests' );
+		} elseif ( ! empty( $job['events']['moderation'] ) ) {
+			if ( 'publish' === $job['after']['status'] ) {
+				/* translators: %d: Request ID. */
+				$subject = sprintf( __( 'Your request #%d has been approved for consideration', 'yoohw-feature-requests' ), $id );
+				$intro = __( 'Thank you for sharing your idea. Your request has passed moderation and is now approved for consideration.', 'yoohw-feature-requests' );
+			} else {
+				/* translators: %d: Request ID. */
+				$subject = sprintf( __( 'Your request #%d was not approved', 'yoohw-feature-requests' ), $id );
+				$intro = __( 'Thank you for taking the time to share your idea. Your request has not been approved for consideration at this time.', 'yoohw-feature-requests' );
+			}
+		} else {
+			/* translators: 1: Request ID, 2: Current roadmap status. */
+			$subject = sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $status_label );
+			$intro = __( 'There is a new roadmap update for your request.', 'yoohw-feature-requests' );
 		}
-		if ( 'publish' === $job['after']['status'] ) { $lines[] = __( 'Roadmap:', 'yoohw-feature-requests' ) . ' ' . Requests::state_label( $id ); }
-		$lines[] = __( 'Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' );
+		$lines = array( $intro );
+		/* translators: 1: Request ID, 2: Request title. */
+		$lines[] = sprintf( __( 'Request #%1$d: %2$s', 'yoohw-feature-requests' ), $id, $job['title'] );
+		if ( 'new' === $type ) {
+			$lines[] = __( 'Review the details and choose whether to approve the suggestion for consideration or mark it as not approved.', 'yoohw-feature-requests' );
+		} else {
+			if ( ! empty( $job['events']['moderation'] ) ) {
+				$lines[] = __( 'Moderation:', 'yoohw-feature-requests' ) . ' ' . Requests::moderation_label( $post );
+			}
+			if ( 'publish' === $job['after']['status'] ) {
+				$lines[] = __( 'Roadmap:', 'yoohw-feature-requests' ) . ' ' . $status_label;
+				$context = array(
+					'under_review' => __( 'The suggestion is being reviewed. Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' ),
+					'planned' => __( 'The suggestion is included in the current plan. Scope and timing may change. Approval does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' ),
+					'in_progress' => __( 'The roadmap now shows work in progress for this suggestion. Follow the request for the latest status; timing may change.', 'yoohw-feature-requests' ),
+					'released' => __( 'This suggestion is now marked as released. Refer to the related product\'s release notes for availability and update instructions.', 'yoohw-feature-requests' ),
+					'declined' => __( 'This suggestion is not planned for implementation at this time. Thank you for helping us understand what you need.', 'yoohw-feature-requests' ),
+				);
+				if ( isset( $context[ $job['after']['state'] ] ) ) { $lines[] = $context[ $job['after']['state'] ]; }
+			}
+		}
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
-		if ( $url ) { $lines[] = __( 'View request:', 'yoohw-feature-requests' ) . ' ' . $url; }
+		if ( $url ) { $lines[] = ( 'new' === $type ? __( 'Review request:', 'yoohw-feature-requests' ) : __( 'View your request:', 'yoohw-feature-requests' ) ) . ' ' . $url; }
 		$previous = $job;
 		++$job['attempts'];
 		// Persist attempt before transport; no exactly-once delivery guarantee is possible.

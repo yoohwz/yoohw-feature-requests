@@ -29,6 +29,7 @@ wp_set_current_user( $owner );
 $id = Requests::submit( array( 'title' => 'Synthetic submitted idea', 'description' => 'PRIVATE BODY MUST NOT BE EMAILED', 'kind' => 'feature' ) );
 $check( is_int( $id ) && 1 === count( $mail ) && 'moderators@example.test' === $mail[0]['to'], 'Completed frontend submission emails only configured moderator' );
 $check( false === strpos( $mail[0]['message'], 'PRIVATE BODY' ) && false === strpos( $mail[0]['message'], 'owner-' ), 'New request email excludes description and account identity' );
+$check( false !== strpos( $mail[0]['subject'], '#' . $id ) && false !== strpos( $mail[0]['subject'], 'needs review' ) && false !== strpos( $mail[0]['message'], 'Review request:' ), 'Administrator copy identifies the request and gives a review action' );
 do_action( 'yoohw_feature_requests_submitted', $id );
 $check( 1 === count( $mail ), 'Repeated submission-complete event does not resend' );
 $bad = Requests::submit( array( 'title' => '', 'description' => 'Invalid', 'kind' => 'feature' ) );
@@ -147,5 +148,17 @@ foreach ( array( 'claim', 'result' ) as $phase ) {
  N::deliver( $race, 'update', $replacement['token'] );
  $check( 'accepted' === $job( $race )['result'], 'Replacement event can still deliver after ' . $phase . ' race' );
 }
+
+wp_set_current_user( $admin ); $mail = array(); $accept = true; $copy = $seed();
+$review( $copy, 'publish', 'planned' );
+$check( false !== strpos( $mail[0]['subject'], '#' . $copy ) && false !== strpos( $mail[0]['subject'], 'approved for consideration' ) && false !== strpos( $mail[0]['message'], 'does not promise implementation' ), 'Approval copy identifies the request without promising delivery' );
+$review( $copy, 'publish', 'in_progress' );
+$check( false !== strpos( $mail[1]['subject'], 'In Progress' ) && false !== strpos( $mail[1]['message'], 'timing may change' ), 'In-progress copy describes the milestone and uncertain timing' );
+$review( $copy, 'publish', 'released' );
+$check( false !== strpos( $mail[2]['subject'], 'Released' ) && false !== strpos( $mail[2]['message'], 'release notes' ) && false === strpos( $mail[2]['message'], 'does not promise implementation' ), 'Released copy directs to product release notes without the approval disclaimer' );
+$review( $copy, 'publish', 'declined' );
+$check( false !== strpos( $mail[3]['subject'], 'Declined' ) && false !== strpos( $mail[3]['message'], 'not planned for implementation at this time' ), 'Declined copy explains the roadmap decision without inventing a reason' );
+$review( $copy, 'draft', 'declined' );
+$check( false !== strpos( $mail[4]['subject'], 'was not approved' ) && false === strpos( $mail[4]['message'], 'Roadmap:' ), 'Not-approved copy is distinct from a published roadmap decline' );
 remove_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX );
 echo 'Notification assertions passed: ' . $checks . "\n";
