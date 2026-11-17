@@ -8,6 +8,7 @@
 use YoOhwFeatureRequests\Requests;
 
 defined( 'ABSPATH' ) || exit;
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Included inside Frontend::render(); these variables have function scope, not global scope.
 ?>
 <section aria-labelledby="yfr-submit-heading">
 	<h2 id="yfr-submit-heading"><?php esc_html_e( 'Suggest an improvement', 'yoohw-feature-requests' ); ?></h2>
