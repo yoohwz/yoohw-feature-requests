@@ -153,8 +153,12 @@ final class Frontend {
 		if ( ! $actor || $actor === (int) $post->post_author ) { return ''; }
 		$user = get_userdata( $actor );
 		$name = $user ? $user->display_name : __( 'Request moderator', 'yoohw-feature-requests' );
+		if ( get_current_user_id() === (int) $post->post_author ) {
+			/* translators: %s: moderator display name. */
+			return sprintf( __( 'Created by %s on your behalf.', 'yoohw-feature-requests' ), $name );
+		}
 		/* translators: %s: moderator display name. */
-		return sprintf( __( 'Created by %s on your behalf.', 'yoohw-feature-requests' ), $name );
+		return sprintf( __( 'Created by %s for the request owner.', 'yoohw-feature-requests' ), $name );
 	}
 
 	public static function meta( $request ) {
