@@ -24,7 +24,7 @@ final class Notifications {
 	}
 
 	public static function config() {
-		return wp_parse_args( (array) get_option( self::OPTION, array() ), array( 'new' => 1, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => '', 'page_id' => 0 ) );
+		return wp_parse_args( (array) get_option( self::OPTION, array() ), array( 'new' => 1, 'receipt' => 1, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => '', 'page_id' => 0 ) );
 	}
 
 	public static function snapshot( $id ) {
@@ -69,8 +69,17 @@ final class Notifications {
 	}
 
 	public static function submitted( $id ) {
-		if ( Requests::TYPE !== get_post_type( $id ) || 'pending' !== get_post_status( $id ) || ! self::config()['new'] || get_post_meta( $id, '_yfr_notice_new', true ) ) { return; }
-		self::queue( $id, 'new', array( 'new' => true ), self::snapshot( $id ) );
+		if ( Requests::TYPE !== get_post_type( $id ) ) { return; }
+		$config = self::config();
+		// Consume only new core saves, including when disabled. Old requests never acquire eligibility.
+		$receipt = 'eligible' === get_post_meta( $id, Requests::META_RECEIPT, true ) && update_post_meta( $id, Requests::META_RECEIPT, 'consumed', 'eligible' );
+		if ( 'pending' !== get_post_status( $id ) ) { return; }
+		if ( $receipt && $config['receipt'] && ! get_post_meta( $id, '_yfr_notice_receipt', true ) ) {
+			self::queue( $id, 'receipt', array( 'receipt' => true ), self::snapshot( $id ) );
+		}
+		if ( $config['new'] && ! get_post_meta( $id, '_yfr_notice_new', true ) ) {
+			self::queue( $id, 'new', array( 'new' => true ), self::snapshot( $id ) );
+		}
 	}
 
 	private static function queue( $id, $type, $events, $after ) {
@@ -84,7 +93,7 @@ final class Notifications {
 
 	/** One immutable event per type; a newer event supersedes a failed older update. */
 	public static function deliver( $id, $type, $token ) {
-		if ( ! in_array( $type, array( 'new', 'update' ), true ) ) { return; }
+		if ( ! in_array( $type, array( 'new', 'receipt', 'update' ), true ) ) { return; }
 		global $wpdb;
 		$lock_name = 'yfr_mail_lock_' . absint( $id ) . '_' . $type;
 		$lock = ( time() + 5 * MINUTE_IN_SECONDS ) . ':' . wp_generate_uuid4();
@@ -105,14 +114,14 @@ final class Notifications {
 	}
 
 	private static function send( $id, $type, $token ) {
-		if ( ! in_array( $type, array( 'new', 'update' ), true ) || Requests::TYPE !== get_post_type( $id ) ) { return; }
+		if ( ! in_array( $type, array( 'new', 'receipt', 'update' ), true ) || Requests::TYPE !== get_post_type( $id ) ) { return; }
 		$key = '_yfr_notice_' . $type;
 		$job = get_post_meta( $id, $key, true );
 		if ( ! is_array( $job ) || $job['token'] !== $token || 'pending' !== $job['result'] || $job['attempts'] >= 3 ) { return; }
 		$config = self::config();
 		$post = get_post( $id );
 		$author = get_userdata( $job['author'] );
-		$enabled = 'new' === $type ? $config['new'] : ( ( empty( $job['events']['moderation'] ) || $config['moderation'] ) && ( empty( $job['events']['roadmap'] ) || $config['roadmap'] ) );
+		$enabled = 'new' === $type ? $config['new'] : ( 'receipt' === $type ? $config['receipt'] : ( ( empty( $job['events']['moderation'] ) || $config['moderation'] ) && ( empty( $job['events']['roadmap'] ) || $config['roadmap'] ) ) );
 		$recipient = 'new' === $type ? ( $config['admin_email'] ?: get_option( 'admin_email' ) ) : ( $author ? $author->user_email : '' );
 		if ( ( $job['revision'] ?? '' ) !== get_option( 'yfr_notification_revision', '' ) || ! $enabled || ! $author || (int) $post->post_author !== $job['author'] || ! is_string( $recipient ) || ! is_email( $recipient ) || preg_match( '/[\r\n]/', $recipient ) || self::snapshot( $id ) !== $job['after'] ) {
 			$previous = $job; $job['result'] = 'cancelled'; update_post_meta( $id, $key, $job, $previous ); wp_clear_scheduled_hook( self::RETRY, array( $id, $type, $token ) ); return;
@@ -122,6 +131,10 @@ final class Notifications {
 			/* translators: %d: Request ID. */
 			$subject = sprintf( __( 'New request #%d needs review', 'yoohw-feature-requests' ), $id );
 			$intro = __( 'A new suggestion has been submitted and is waiting for your review.', 'yoohw-feature-requests' );
+		} elseif ( 'receipt' === $type ) {
+			/* translators: %d: Request ID. */
+			$subject = sprintf( __( 'Your request #%d has been received', 'yoohw-feature-requests' ), $id );
+			$intro = __( 'Your suggestion has been received and is waiting for moderation.', 'yoohw-feature-requests' );
 		} elseif ( ! empty( $job['events']['moderation'] ) ) {
 			if ( 'publish' === $job['after']['status'] ) {
 				/* translators: %d: Request ID. */
@@ -140,6 +153,8 @@ final class Notifications {
 		$details = array();
 		if ( 'new' === $type ) {
 			$details[] = __( 'Review the details and choose whether to approve the suggestion for consideration or mark it as not approved.', 'yoohw-feature-requests' );
+		} elseif ( 'receipt' === $type ) {
+			$details[] = __( 'We will let you know about important review decisions when notifications are enabled. Receiving a suggestion does not promise implementation, a delivery date or paid work.', 'yoohw-feature-requests' );
 		} else {
 			if ( 'publish' === $job['after']['status'] ) {
 				$context = array(
@@ -155,7 +170,7 @@ final class Notifications {
 		$url = 'new' === $type ? admin_url( 'post.php?post=' . absint( $id ) . '&action=edit' ) : self::request_url( $id );
 		$creator = (int) get_post_meta( $id, Requests::META_CREATED_BY, true );
 		if ( $creator && $creator !== (int) $job['author'] ) {
-			$details[] = __( 'Created on your behalf by a request moderator.', 'yoohw-feature-requests' );
+			$details[] = 'new' === $type ? __( 'Created by a request moderator for the request owner.', 'yoohw-feature-requests' ) : __( 'Created on your behalf by a request moderator.', 'yoohw-feature-requests' );
 		}
 		$message = self::email_content( $id, $job, $type, $intro, $details, $url );
 		$previous = $job;
@@ -192,7 +207,7 @@ final class Notifications {
 			'declined' => array( '#fee2e2', '#7f1d1d' ),
 		);
 		$statuses = array();
-		if ( 'new' === $type || ! empty( $job['events']['moderation'] ) ) {
+		if ( in_array( $type, array( 'new', 'receipt' ), true ) || ! empty( $job['events']['moderation'] ) ) {
 			$statuses[] = array( __( 'Moderation:', 'yoohw-feature-requests' ), Requests::moderation_label( (object) array( 'post_status' => $job['after']['status'] ) ), $job['after']['status'] );
 		}
 		if ( 'publish' === $job['after']['status'] ) {
@@ -242,7 +257,7 @@ final class Notifications {
 	public static function sanitize( $input ) {
 		if ( ! is_array( $input ) ) { return self::config(); }
 		$result = array();
-		foreach ( array( 'new', 'moderation', 'roadmap' ) as $key ) { $result[ $key ] = isset( $input[ $key ] ) && '1' === $input[ $key ] ? 1 : 0; }
+		foreach ( array( 'new', 'receipt', 'moderation', 'roadmap' ) as $key ) { $result[ $key ] = isset( $input[ $key ] ) && '1' === $input[ $key ] ? 1 : 0; }
 		$email = $input['admin_email'] ?? '';
 		if ( ! is_string( $email ) || ( '' !== $email && ( ! is_email( $email ) || preg_match( '/[\r\n]/', $email ) ) ) ) {
 			add_settings_error( self::OPTION, 'invalid_email', __( 'Enter one valid administrator email address.', 'yoohw-feature-requests' ) );
@@ -263,7 +278,7 @@ final class Notifications {
 		?>
 		<div class="wrap"><h1><?php esc_html_e( 'Email notifications', 'yoohw-feature-requests' ); ?></h1><form action="options.php" method="post">
 		<?php settings_fields( 'yfr_notifications' ); ?>
-		<?php foreach ( array( 'new' => __( 'New requests to administrator', 'yoohw-feature-requests' ), 'moderation' => __( 'Moderation decisions to author', 'yoohw-feature-requests' ), 'roadmap' => __( 'Roadmap changes to author', 'yoohw-feature-requests' ) ) as $key => $label ) : ?>
+		<?php foreach ( array( 'new' => __( 'New requests to administrator', 'yoohw-feature-requests' ), 'receipt' => __( 'Submission receipts to request owner', 'yoohw-feature-requests' ), 'moderation' => __( 'Moderation decisions to author', 'yoohw-feature-requests' ), 'roadmap' => __( 'Roadmap changes to author', 'yoohw-feature-requests' ) ) as $key => $label ) : ?>
 		<p><label><input type="checkbox" name="yfr_notifications[<?php echo esc_attr( $key ); ?>]" value="1" <?php checked( $config[ $key ], 1 ); ?>> <?php echo esc_html( $label ); ?></label></p>
 		<?php endforeach; ?>
 		<p><label for="yfr-email"><?php esc_html_e( 'Administrator recipient (blank uses site administrator email)', 'yoohw-feature-requests' ); ?></label><br><input id="yfr-email" type="email" class="regular-text" name="yfr_notifications[admin_email]" value="<?php echo esc_attr( $config['admin_email'] ); ?>"></p>

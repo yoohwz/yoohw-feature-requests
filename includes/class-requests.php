@@ -20,6 +20,7 @@ final class Requests {
 	const META_URL   = '_yfr_reference_url';
 	const META_CREATED_BY = '_yfr_created_by';
 	const META_CREATION_KEY = '_yfr_creation_key';
+	const META_RECEIPT = '_yfr_receipt_eligibility';
 
 	public static function kinds() {
 		return array(
@@ -254,7 +255,7 @@ final class Requests {
 	}
 
 	private static function persist( $data, $owner_id, $actor, $creation_key, $notify ) {
-		$meta = array( self::META_KIND => $data['kind'], self::META_STATE => 'under_review', self::META_URL => $data['url'], self::META_CREATED_BY => $actor );
+		$meta = array( self::META_KIND => $data['kind'], self::META_STATE => 'under_review', self::META_URL => $data['url'], self::META_CREATED_BY => $actor, self::META_RECEIPT => 'eligible' );
 		if ( $creation_key ) { $meta[ self::META_CREATION_KEY ] = $creation_key; }
 		$id = wp_insert_post(
 			wp_slash( array(
@@ -268,7 +269,7 @@ final class Requests {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
-		if ( ! $id || self::TYPE !== get_post_type( $id ) || 'pending' !== get_post_status( $id ) || (int) get_post_field( 'post_author', $id ) !== $owner_id || (int) get_post_meta( $id, self::META_CREATED_BY, true ) !== $actor || ( $creation_key && get_post_meta( $id, self::META_CREATION_KEY, true ) !== $creation_key ) || get_post_meta( $id, self::META_KIND, true ) !== $data['kind'] || get_post_meta( $id, self::META_STATE, true ) !== 'under_review' || get_post_meta( $id, self::META_URL, true ) !== $data['url'] ) {
+		if ( ! $id || 'eligible' !== get_post_meta( $id, self::META_RECEIPT, true ) || self::TYPE !== get_post_type( $id ) || 'pending' !== get_post_status( $id ) || (int) get_post_field( 'post_author', $id ) !== $owner_id || (int) get_post_meta( $id, self::META_CREATED_BY, true ) !== $actor || ( $creation_key && get_post_meta( $id, self::META_CREATION_KEY, true ) !== $creation_key ) || get_post_meta( $id, self::META_KIND, true ) !== $data['kind'] || get_post_meta( $id, self::META_STATE, true ) !== 'under_review' || get_post_meta( $id, self::META_URL, true ) !== $data['url'] ) {
 			if ( $id ) { wp_delete_post( $id, true ); }
 			return new \WP_Error( 'save_failed', __( 'The request could not be saved. Please try again.', 'yoohw-feature-requests' ) );
 		}

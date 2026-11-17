@@ -29,7 +29,7 @@ foreach ( array( array( 'notify' => null ), array( 'notify' => 'false' ), array(
 $check( $error( R::create_for_user( array_merge( $input, array( 'title' => '' ) ), $owner ), 'invalid_content' ), 'Shared validation applied' );
 $page = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Managed request fixture', 'post_content' => '[yfr_requests]' ) );
 $old_config = get_option( N::OPTION );
-update_option( N::OPTION, array( 'new' => 1, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => 'moderators@example.test', 'page_id' => $page ) );
+update_option( N::OPTION, array( 'new' => 1, 'receipt' => 0, 'moderation' => 1, 'roadmap' => 1, 'admin_email' => 'moderators@example.test', 'page_id' => $page ) );
 $mail = array(); $intercept = static function ( $pre, $args ) use ( &$mail ) { $mail[] = $args; return true; }; add_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX, 2 );
 $key = hash( 'sha256', $suffix );
 $events = 0; $event = static function () use ( &$events ) { ++$events; }; add_action( 'yoohw_feature_requests_submitted', $event );
@@ -51,7 +51,7 @@ $fail_meta = static function ( $check, $object_id, $meta_key ) { return R::META_
 $failed = R::create_for_user( $input, $owner, array( 'notify' => false ) ); remove_filter( 'add_post_metadata', $fail_meta );
 $check( $error( $failed, 'save_failed' ) && get_post( $id ) && ! $events, 'Missing audit metadata rolls back only new request before event' );
 do_action( 'yoohw_feature_requests_submitted', $id );
-$check( 1 === count( $mail ) && false !== strpos( $mail[0]['message'], 'Created on your behalf by a request moderator.' ) && false === strpos( $mail[0]['message'], 'behalf_admin_' ) && false === strpos( $mail[0]['message'], 'PRIVATE DESCRIPTION' ), 'Managed email includes generic audit without account/source/content leaks' );
+$check( 1 === count( $mail ) && false !== strpos( $mail[0]['message'], 'Created by a request moderator for the request owner.' ) && false === strpos( $mail[0]['message'], 'behalf_admin_' ) && false === strpos( $mail[0]['message'], 'PRIVATE DESCRIPTION' ), 'Managed email includes generic audit without account/source/content leaks' );
 $default = R::create_for_user( $input, $owner );
 $check( is_array( $default ) && $default['created'] && 2 === count( $mail ), 'Default managed creation emits existing submitted event once' );
 wp_update_user( array( 'ID' => $admin, 'display_name' => 'Manager & Team' ) );
