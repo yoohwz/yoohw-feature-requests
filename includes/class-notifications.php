@@ -172,6 +172,12 @@ final class Notifications {
 
 	/** An HTML content fragment only; the host's shared email shell is untouched. */
 	private static function email_content( $id, $job, $type, $intro, $details, $url ) {
+		$defaults = array( 'primary' => '#2563eb', 'primary_text' => '#ffffff', 'primary_soft' => '#eef2ff', 'primary_border' => '#bfdbfe', 'text' => '#18212f', 'muted' => '#647084' );
+		$theme = apply_filters( 'yoohw_feature_requests_email_palette', $defaults );
+		foreach ( $defaults as $key => $fallback ) {
+			$value = is_array( $theme ) && isset( $theme[ $key ] ) && is_string( $theme[ $key ] ) ? sanitize_hex_color( $theme[ $key ] ) : '';
+			$theme_colors[ $key ] = $value ?: $fallback;
+		}
 		$colors = array(
 			'pending' => array( '#fef3c7', '#78350f' ),
 			'publish' => array( '#dcfce7', '#14532d' ),
@@ -188,21 +194,21 @@ final class Notifications {
 		if ( 'publish' === $job['after']['status'] ) {
 			$statuses[] = array( __( 'Roadmap:', 'yoohw-feature-requests' ), Requests::states()[ $job['after']['state'] ] ?? Requests::states()['under_review'], $job['after']['state'] );
 		}
-		$html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65;color:#1f2937;">';
+		$html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65;color:' . esc_attr( $theme_colors['text'] ) . ';">';
 		$html .= '<p style="margin:0 0 20px;">' . esc_html( $intro ) . '</p>';
-		$html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;border:1px solid #dbe2ea;border-radius:10px;background-color:#f8fafc;"><tr><td style="padding:20px;">';
+		$html .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;border:1px solid ' . esc_attr( $theme_colors['primary_border'] ) . ';border-radius:10px;background-color:' . esc_attr( $theme_colors['primary_soft'] ) . ';"><tr><td style="padding:20px;">';
 		/* translators: %d: Request ID. */
-		$html .= '<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#64748b;">' . esc_html( sprintf( __( 'REQUEST #%d', 'yoohw-feature-requests' ), $id ) ) . '</p>';
-		$html .= '<h2 style="margin:0 0 16px;font-size:19px;line-height:1.4;font-weight:700;color:#182231;overflow-wrap:anywhere;">' . esc_html( $job['title'] ) . '</h2>';
+		$html .= '<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:' . esc_attr( $theme_colors['muted'] ) . ';">' . esc_html( sprintf( __( 'REQUEST #%d', 'yoohw-feature-requests' ), $id ) ) . '</p>';
+		$html .= '<h2 style="margin:0 0 16px;font-size:19px;line-height:1.4;font-weight:700;color:' . esc_attr( $theme_colors['text'] ) . ';overflow-wrap:anywhere;">' . esc_html( $job['title'] ) . '</h2>';
 		foreach ( $statuses as $row ) {
 			$palette = $colors[ $row[2] ] ?? array( '#f1f5f9', '#334155' );
-			$html .= '<p style="margin:10px 0 0;font-size:13px;"><span style="color:#475569;">' . esc_html( $row[0] ) . '</span> <span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;background-color:' . esc_attr( $palette[0] ) . ';color:' . esc_attr( $palette[1] ) . ';">' . esc_html( $row[1] ) . '</span></p>';
+			$html .= '<p style="margin:10px 0 0;font-size:13px;"><span style="color:' . esc_attr( $theme_colors['muted'] ) . ';">' . esc_html( $row[0] ) . '</span> <span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;background-color:' . esc_attr( $palette[0] ) . ';color:' . esc_attr( $palette[1] ) . ';">' . esc_html( $row[1] ) . '</span></p>';
 		}
 		$html .= '</td></tr></table>';
-		foreach ( $details as $detail ) { $html .= '<p style="margin:0 0 20px;color:#475569;">' . esc_html( $detail ) . '</p>'; }
+		foreach ( $details as $detail ) { $html .= '<p style="margin:0 0 20px;color:' . esc_attr( $theme_colors['muted'] ) . ';">' . esc_html( $detail ) . '</p>'; }
 		if ( $url ) {
 			$label = 'new' === $type ? __( 'Review request', 'yoohw-feature-requests' ) : __( 'View your request', 'yoohw-feature-requests' );
-			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 8px;"><tr><td style="border-radius:8px;background-color:#1f2937;"><a href="' . esc_url( $url ) . '" style="display:inline-block;padding:13px 20px;border:1px solid #1f2937;border-radius:8px;background-color:#1f2937;color:#ffffff;font-size:14px;font-weight:700;line-height:1.4;text-decoration:none;">' . esc_html( $label ) . '</a></td></tr></table>';
+			$html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 8px;"><tr><td style="border-radius:8px;background-color:' . esc_attr( $theme_colors['primary'] ) . ';"><a href="' . esc_url( $url ) . '" style="display:inline-block;padding:12px 18px;border:1px solid ' . esc_attr( $theme_colors['primary'] ) . ';border-radius:8px;background-color:' . esc_attr( $theme_colors['primary'] ) . ';color:' . esc_attr( $theme_colors['primary_text'] ) . ';font-size:14px;font-weight:700;line-height:1.4;text-decoration:none;">' . esc_html( $label ) . '</a></td></tr></table>';
 		}
 		return $html . '</div>';
 	}

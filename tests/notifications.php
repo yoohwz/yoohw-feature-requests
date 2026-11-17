@@ -163,5 +163,13 @@ $review( $copy, 'draft', 'declined' );
 $check( false !== strpos( $mail[4]['subject'], 'was not approved' ) && false === strpos( $mail[4]['message'], 'Roadmap:' ), 'Not-approved copy is distinct from a published roadmap decline' );
 $escaped = $seed(); wp_update_post( array( 'ID' => $escaped, 'post_title' => 'Import & review <img src=x onerror=alert(1)> safely' ) ); $review( $escaped, 'publish', 'planned' ); $rendered = end( $mail );
 $check( false === strpos( $rendered['message'], 'Import & review' ) && false !== strpos( wp_specialchars_decode( $rendered['message'], ENT_QUOTES ), 'Import & review' ) && false === strpos( $rendered['message'], '<img' ) && false === strpos( $rendered['message'], 'onerror=' ), 'Request-card title escapes text and cannot introduce HTML or remote images' );
+
+wp_update_post( array( 'ID' => $page, 'post_status' => 'publish' ) );
+$palette_override = static function ( $theme ) { return array_merge( $theme, array( 'primary' => '#abc123', 'primary_text' => '#123456', 'primary_soft' => '#f4f7ea', 'primary_border' => '#d3e1b1' ) ); };
+add_filter( 'yoohw_feature_requests_email_palette', $palette_override ); $themed = $seed(); $review( $themed, 'publish', 'planned' ); $rendered = end( $mail ); remove_filter( 'yoohw_feature_requests_email_palette', $palette_override );
+$check( false !== strpos( $rendered['message'], 'background-color:#abc123' ) && false !== strpos( $rendered['message'], 'color:#123456' ) && false !== strpos( $rendered['message'], 'background-color:#f4f7ea' ), 'Host palette controls CTA contrast and request-card background' );
+$invalid_palette = static function ( $theme ) { $theme['primary'] = 'red; background-image:url(https://outside.example.test)'; return $theme; };
+add_filter( 'yoohw_feature_requests_email_palette', $invalid_palette ); $themed = $seed(); $review( $themed, 'publish', 'planned' ); $rendered = end( $mail ); remove_filter( 'yoohw_feature_requests_email_palette', $invalid_palette );
+$check( false !== strpos( $rendered['message'], 'background-color:#2563eb' ) && false === strpos( $rendered['message'], 'background-image' ), 'Invalid theme color safely falls back without CSS injection' );
 remove_filter( 'pre_wp_mail', $intercept, PHP_INT_MAX );
 echo 'Notification assertions passed: ' . $checks . "\n";

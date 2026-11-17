@@ -43,3 +43,7 @@ button. Status explanations and subjects differ by event. No remote images,
 stylesheets, request description or account identity are added. The shared host
 email shell/header/footer and branding remain unchanged; the fragment also works
 without a host template. Every dynamic string/URL is escaped.
+
+Hosts can supply validated hex colors through `yoohw_feature_requests_email_palette`.
+The optional Workspace adapter maps Support's public `ui_palette()` to CTA colors,
+card background/border and text; standalone defaults require no host dependency.
