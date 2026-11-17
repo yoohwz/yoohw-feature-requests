@@ -157,4 +157,32 @@ check(code == 302, 'native moderation save redirects')
 check(cli('post', 'meta', 'get', str(post_id), '_yfr_state') == 'planned', 'native roadmap save persisted')
 _, _, body = request(owner, page + '&yfr_request=' + str(post_id))
 check('Planned' in body and 'Published' in body, 'owner sees moderation result')
+
+# The native taxonomy dropdowns must filter data, not only retain a selection.
+filters = json.loads(cli('eval', f'''
+$category=wp_insert_term('HTTP Category {suffix}','yfr_category');
+$product=wp_insert_term('HTTP Product {suffix}','yfr_product');
+$posts=[];
+foreach(['both'=>'planned','category'=>'planned','product'=>'planned','review'=>'under_review','neither'=>'planned'] as $label=>$state){{
+ $id=wp_insert_post(['post_type'=>'yfr_request','post_status'=>'pending','post_author'=>{data['owner']},'post_title'=>'Filter {suffix} '.$label,'post_content'=>'Synthetic filter request content.','meta_input'=>['_yfr_state'=>$state]]);
+ $posts[$label]=$id;
+ if(in_array($label,['both','category','review'],true))wp_set_object_terms($id,[(int)$category['term_id']],'yfr_category');
+ if(in_array($label,['both','product','review'],true))wp_set_object_terms($id,[(int)$product['term_id']],'yfr_product');
+}}
+echo wp_json_encode(['category'=>get_term($category['term_id'])->slug,'product'=>get_term($product['term_id'])->slug,'posts'=>$posts]);
+'''))
+list_base = base + '/wp-admin/edit.php?' + urllib.parse.urlencode({'post_type': 'yfr_request', 's': 'Filter ' + suffix})
+
+
+def filtered_rows(values):
+    code, _, html = request(admin, list_base + '&' + urllib.parse.urlencode(values))
+    check(code == 200, 'admin filter request succeeds')
+    return set(map(int, re.findall(r'<tr[^>]+id="post-(\d+)"', html)))
+
+
+ids = filters['posts']
+check(filtered_rows({'yfr_category': filters['category']}) == {ids['both'], ids['category'], ids['review']}, 'category dropdown restricts actual rows')
+check(filtered_rows({'yfr_product': filters['product']}) == {ids['both'], ids['product'], ids['review']}, 'product dropdown restricts actual rows')
+check(filtered_rows({'yfr_category': filters['category'], 'yfr_product': filters['product'], 'yfr_state_filter': 'planned'}) == {ids['both']}, 'category, product and roadmap filters intersect')
+check(filtered_rows({'yfr_category': '0', 'yfr_product': '0', 'yfr_state_filter': ''}) == set(ids.values()), 'reset dropdowns restore all matching rows')
 print(f'PASS HTTP {passed} assertions ({base})')

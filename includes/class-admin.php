@@ -110,6 +110,20 @@ final class Admin {
 			if ( isset( Requests::states()[ $state ] ) ) {
 				$query->set( 'meta_query', array( array( 'key' => Requests::META_STATE, 'value' => $state ) ) );
 			}
+			$tax_query = array( 'relation' => 'AND' );
+			foreach ( array( Requests::CATEGORY, Requests::PRODUCT ) as $taxonomy ) {
+				$slug = isset( $_GET[ $taxonomy ] ) && is_string( $_GET[ $taxonomy ] ) ? sanitize_title( wp_unslash( $_GET[ $taxonomy ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin filter.
+				if ( '' !== $slug && '0' !== $slug ) {
+					$tax_query[] = array( 'taxonomy' => $taxonomy, 'field' => 'slug', 'terms' => array( $slug ) );
+				}
+			}
+			if ( count( $tax_query ) > 1 ) {
+				$existing = $query->get( 'tax_query' );
+				if ( is_array( $existing ) && $existing ) {
+					$tax_query[] = $existing;
+				}
+				$query->set( 'tax_query', $tax_query );
+			}
 		}
 	}
 }
